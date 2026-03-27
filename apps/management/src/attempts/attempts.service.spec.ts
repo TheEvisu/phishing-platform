@@ -92,6 +92,7 @@ describe('AttemptsService', () => {
       expect(mockedAxios.post).toHaveBeenCalledWith(
         expect.stringContaining('/phishing/send'),
         expect.objectContaining({ recipientEmail: 'target@example.com' }),
+        { timeout: 5_000 },
       );
       expect(result).toBeDefined();
     });

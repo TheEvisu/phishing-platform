@@ -33,6 +33,8 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document);
 
+  app.enableShutdownHooks();
+
   const port = process.env.PORT || 3001;
   await app.listen(port);
   const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);

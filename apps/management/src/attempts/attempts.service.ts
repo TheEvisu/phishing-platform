@@ -51,11 +51,15 @@ export class AttemptsService {
     try {
       const simulationServiceUrl =
         process.env.PHISHING_SIMULATION_URL || 'http://localhost:3000';
-      await axios.post(`${simulationServiceUrl}/phishing/send`, {
-        recipientEmail: createAttemptDto.email,
-        content: createAttemptDto.content,
-        attemptId,
-      });
+      await axios.post(
+        `${simulationServiceUrl}/phishing/send`,
+        {
+          recipientEmail: createAttemptDto.email,
+          content: createAttemptDto.content,
+          attemptId,
+        },
+        { timeout: 5_000 },
+      );
 
       return attempt;
     } catch (error) {

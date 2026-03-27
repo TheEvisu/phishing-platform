@@ -279,6 +279,7 @@ describe('Management Service (e2e)', () => {
       expect(mockedAxios.post).toHaveBeenCalledWith(
         expect.stringContaining('/phishing/send'),
         expect.objectContaining({ recipientEmail: 'target@example.com' }),
+        { timeout: 5_000 },
       );
       expect(res.body).toMatchObject({ email: 'target@example.com', createdBy: 'testuser' });
     });

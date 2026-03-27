@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import axios from 'axios';
@@ -14,8 +14,27 @@ export class AttemptsService {
     private phishingAttemptModel: Model<PhishingAttempt>,
   ) {}
 
-  async getAllAttempts() {
-    return await this.phishingAttemptModel.find().sort({ createdAt: -1 }).exec();
+  async getAllAttempts(username: string, page: number, limit: number) {
+    const filter = { createdBy: username };
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      this.phishingAttemptModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.phishingAttemptModel.countDocuments(filter),
+    ]);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   async createAttempt(createAttemptDto: CreatePhishingAttemptDto, username: string) {
@@ -46,19 +65,26 @@ export class AttemptsService {
     }
   }
 
-  async getAttemptById(id: string) {
+  async getAttemptById(id: string, username: string) {
     const attempt = await this.phishingAttemptModel.findById(id);
     if (!attempt) {
       throw new NotFoundException('Phishing attempt not found');
     }
+    if (attempt.createdBy !== username) {
+      throw new ForbiddenException('Access denied');
+    }
     return attempt;
   }
 
-  async deleteAttempt(id: string) {
-    const attempt = await this.phishingAttemptModel.findByIdAndDelete(id);
+  async deleteAttempt(id: string, username: string) {
+    const attempt = await this.phishingAttemptModel.findById(id);
     if (!attempt) {
       throw new NotFoundException('Phishing attempt not found');
     }
+    if (attempt.createdBy !== username) {
+      throw new ForbiddenException('Access denied');
+    }
+    await this.phishingAttemptModel.findByIdAndDelete(id);
     return { message: 'Phishing attempt deleted successfully' };
   }
 }

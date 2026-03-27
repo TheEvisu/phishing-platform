@@ -7,9 +7,11 @@ import {
   Delete,
   UseGuards,
   Request,
+  Query,
 } from '@nestjs/common';
 import { AttemptsService } from './attempts.service';
 import { CreatePhishingAttemptDto } from '../dto/phishing-attempt.dto';
+import { PaginationDto } from '../dto/pagination.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('attempts')
@@ -18,8 +20,15 @@ export class AttemptsController {
   constructor(private readonly attemptsService: AttemptsService) {}
 
   @Get()
-  async getAllAttempts() {
-    return await this.attemptsService.getAllAttempts();
+  async getAllAttempts(
+    @Query() pagination: PaginationDto,
+    @Request() req: { user: { username: string } },
+  ) {
+    return await this.attemptsService.getAllAttempts(
+      req.user.username,
+      pagination.page ?? 1,
+      pagination.limit ?? 10,
+    );
   }
 
   @Post()
@@ -31,12 +40,18 @@ export class AttemptsController {
   }
 
   @Get(':id')
-  async getAttemptById(@Param('id') id: string) {
-    return await this.attemptsService.getAttemptById(id);
+  async getAttemptById(
+    @Param('id') id: string,
+    @Request() req: { user: { username: string } },
+  ) {
+    return await this.attemptsService.getAttemptById(id, req.user.username);
   }
 
   @Delete(':id')
-  async deleteAttempt(@Param('id') id: string) {
-    return await this.attemptsService.deleteAttempt(id);
+  async deleteAttempt(
+    @Param('id') id: string,
+    @Request() req: { user: { username: string } },
+  ) {
+    return await this.attemptsService.deleteAttempt(id, req.user.username);
   }
 }

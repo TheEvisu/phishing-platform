@@ -29,14 +29,23 @@ describe('AttemptsController', () => {
   });
 
   describe('getAllAttempts', () => {
-    it('should return all attempts', async () => {
-      const attempts = [{ _id: '1', email: 'a@a.com' }];
-      mockAttemptsService.getAllAttempts.mockResolvedValue(attempts);
+    it('should pass username and pagination to service', async () => {
+      const paginated = { data: [], total: 0, page: 1, limit: 10, totalPages: 0 };
+      mockAttemptsService.getAllAttempts.mockResolvedValue(paginated);
 
-      const result = await controller.getAllAttempts();
+      const result = await controller.getAllAttempts({ page: 1, limit: 10 }, mockReq);
 
-      expect(mockAttemptsService.getAllAttempts).toHaveBeenCalled();
-      expect(result).toEqual(attempts);
+      expect(mockAttemptsService.getAllAttempts).toHaveBeenCalledWith('testuser', 1, 10);
+      expect(result).toEqual(paginated);
+    });
+
+    it('should use defaults when pagination not provided', async () => {
+      const paginated = { data: [], total: 0, page: 1, limit: 10, totalPages: 0 };
+      mockAttemptsService.getAllAttempts.mockResolvedValue(paginated);
+
+      await controller.getAllAttempts({}, mockReq);
+
+      expect(mockAttemptsService.getAllAttempts).toHaveBeenCalledWith('testuser', 1, 10);
     });
   });
 
@@ -54,25 +63,25 @@ describe('AttemptsController', () => {
   });
 
   describe('getAttemptById', () => {
-    it('should return attempt by id', async () => {
+    it('should pass id and username to service', async () => {
       const attempt = { _id: 'id-1', email: 'a@a.com' };
       mockAttemptsService.getAttemptById.mockResolvedValue(attempt);
 
-      const result = await controller.getAttemptById('id-1');
+      const result = await controller.getAttemptById('id-1', mockReq);
 
-      expect(mockAttemptsService.getAttemptById).toHaveBeenCalledWith('id-1');
+      expect(mockAttemptsService.getAttemptById).toHaveBeenCalledWith('id-1', 'testuser');
       expect(result).toEqual(attempt);
     });
   });
 
   describe('deleteAttempt', () => {
-    it('should delete attempt and return message', async () => {
+    it('should pass id and username to service', async () => {
       const response = { message: 'Phishing attempt deleted successfully' };
       mockAttemptsService.deleteAttempt.mockResolvedValue(response);
 
-      const result = await controller.deleteAttempt('id-1');
+      const result = await controller.deleteAttempt('id-1', mockReq);
 
-      expect(mockAttemptsService.deleteAttempt).toHaveBeenCalledWith('id-1');
+      expect(mockAttemptsService.deleteAttempt).toHaveBeenCalledWith('id-1', 'testuser');
       expect(result).toEqual(response);
     });
   });

@@ -33,6 +33,7 @@ describe('Management Service (e2e)', () => {
   const mockAttemptFind = jest.fn();
   const mockAttemptFindById = jest.fn();
   const mockAttemptFindByIdAndDelete = jest.fn();
+  const mockAttemptCountDocuments = jest.fn();
   const mockAttemptSave = jest.fn();
 
   let hashedPassword: string;
@@ -42,6 +43,12 @@ describe('Management Service (e2e)', () => {
     username: 'testuser',
     email: 'test@example.com',
     role: 'admin',
+  };
+
+  const ownedAttempt = {
+    _id: 'attempt-id-1',
+    email: 'a@b.com',
+    createdBy: 'testuser',
   };
 
   function MockUserModel(dto: any) {
@@ -63,6 +70,7 @@ describe('Management Service (e2e)', () => {
     find: mockAttemptFind,
     findById: mockAttemptFindById,
     findByIdAndDelete: mockAttemptFindByIdAndDelete,
+    countDocuments: mockAttemptCountDocuments,
   });
 
   beforeAll(async () => {
@@ -85,7 +93,7 @@ describe('Management Service (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe());
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
 
     jwtService = moduleFixture.get(JwtService);
@@ -100,7 +108,6 @@ describe('Management Service (e2e)', () => {
     jest.resetAllMocks();
     mockUserSave.mockResolvedValue(undefined);
     mockAttemptSave.mockResolvedValue(undefined);
-    // Default: JWT validation finds the user
     mockUserFindOne.mockResolvedValue({ ...testUser, password: hashedPassword });
   });
 
@@ -214,18 +221,42 @@ describe('Management Service (e2e)', () => {
   // ─── Attempts ────────────────────────────────────────────────────────────────
 
   describe('GET /attempts', () => {
-    it('200: returns all attempts sorted by date', async () => {
-      const mockAttempts = [{ _id: 'id-1', email: 'a@b.com' }];
+    it('200: returns paginated attempts for current user', async () => {
       mockAttemptFind.mockReturnValue({
-        sort: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue(mockAttempts) }),
+        sort: jest.fn().mockReturnValue({
+          skip: jest.fn().mockReturnValue({
+            limit: jest.fn().mockReturnValue({
+              exec: jest.fn().mockResolvedValue([ownedAttempt]),
+            }),
+          }),
+        }),
       });
+      mockAttemptCountDocuments.mockResolvedValue(1);
 
       const res = await request(app.getHttpServer())
         .get('/attempts')
         .set('Authorization', `Bearer ${authToken}`)
         .expect(200);
 
-      expect(res.body).toEqual(mockAttempts);
+      expect(res.body).toMatchObject({ data: [ownedAttempt], total: 1, page: 1, limit: 10, totalPages: 1 });
+    });
+
+    it('200: respects page and limit query params', async () => {
+      mockAttemptFind.mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          skip: jest.fn().mockReturnValue({
+            limit: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue([]) }),
+          }),
+        }),
+      });
+      mockAttemptCountDocuments.mockResolvedValue(25);
+
+      const res = await request(app.getHttpServer())
+        .get('/attempts?page=2&limit=5')
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(200);
+
+      expect(res.body).toMatchObject({ page: 2, limit: 5, total: 25, totalPages: 5 });
     });
 
     it('401: no JWT', async () => {
@@ -274,16 +305,24 @@ describe('Management Service (e2e)', () => {
   });
 
   describe('GET /attempts/:id', () => {
-    it('200: returns attempt by id', async () => {
-      const mockAttempt = { _id: 'attempt-id-1', email: 'a@b.com' };
-      mockAttemptFindById.mockResolvedValue(mockAttempt);
+    it('200: returns attempt owned by current user', async () => {
+      mockAttemptFindById.mockResolvedValue(ownedAttempt);
 
       const res = await request(app.getHttpServer())
         .get('/attempts/attempt-id-1')
         .set('Authorization', `Bearer ${authToken}`)
         .expect(200);
 
-      expect(res.body).toEqual(mockAttempt);
+      expect(res.body).toEqual(ownedAttempt);
+    });
+
+    it('403: attempt belongs to another user', async () => {
+      mockAttemptFindById.mockResolvedValue({ ...ownedAttempt, createdBy: 'otheruser' });
+
+      await request(app.getHttpServer())
+        .get('/attempts/attempt-id-1')
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(403);
     });
 
     it('404: attempt not found', async () => {
@@ -301,8 +340,9 @@ describe('Management Service (e2e)', () => {
   });
 
   describe('DELETE /attempts/:id', () => {
-    it('200: deletes attempt and returns message', async () => {
-      mockAttemptFindByIdAndDelete.mockResolvedValue({ _id: 'attempt-id-1' });
+    it('200: deletes attempt owned by current user', async () => {
+      mockAttemptFindById.mockResolvedValue(ownedAttempt);
+      mockAttemptFindByIdAndDelete.mockResolvedValue(ownedAttempt);
 
       const res = await request(app.getHttpServer())
         .delete('/attempts/attempt-id-1')
@@ -312,8 +352,17 @@ describe('Management Service (e2e)', () => {
       expect(res.body).toEqual({ message: 'Phishing attempt deleted successfully' });
     });
 
+    it('403: attempt belongs to another user', async () => {
+      mockAttemptFindById.mockResolvedValue({ ...ownedAttempt, createdBy: 'otheruser' });
+
+      await request(app.getHttpServer())
+        .delete('/attempts/attempt-id-1')
+        .set('Authorization', `Bearer ${authToken}`)
+        .expect(403);
+    });
+
     it('404: attempt not found', async () => {
-      mockAttemptFindByIdAndDelete.mockResolvedValue(null);
+      mockAttemptFindById.mockResolvedValue(null);
 
       await request(app.getHttpServer())
         .delete('/attempts/nonexistent')

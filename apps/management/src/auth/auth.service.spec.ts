@@ -4,6 +4,8 @@ import { JwtService } from '@nestjs/jwt';
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service';
+
+jest.mock('bcryptjs');
 import { User } from '../schemas/user.schema';
 
 const mockUser = {
@@ -46,7 +48,7 @@ describe('AuthService', () => {
   describe('register', () => {
     it('should register a new user and return token', async () => {
       mockUserModel.findOne.mockResolvedValue(null);
-      jest.spyOn(bcrypt, 'hash').mockResolvedValue('hashed' as never);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashed');
 
       const result = await service.register({
         username: 'testuser',
@@ -70,7 +72,7 @@ describe('AuthService', () => {
   describe('login', () => {
     it('should return token on valid credentials', async () => {
       mockUserModel.findOne.mockResolvedValue(mockUser);
-      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
 
       const result = await service.login({ username: 'testuser', password: 'password123' });
 
@@ -87,7 +89,7 @@ describe('AuthService', () => {
 
     it('should throw UnauthorizedException if password is invalid', async () => {
       mockUserModel.findOne.mockResolvedValue(mockUser);
-      jest.spyOn(bcrypt, 'compare').mockResolvedValue(false as never);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
 
       await expect(
         service.login({ username: 'testuser', password: 'wrongpass' }),

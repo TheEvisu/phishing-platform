@@ -27,3 +27,6 @@ export class PhishingAttempt extends Document {
 }
 
 export const PhishingAttemptSchema = SchemaFactory.createForClass(PhishingAttempt);
+
+// Optimises getAllAttempts: find({ createdBy }).sort({ createdAt: -1 }) + countDocuments({ createdBy })
+PhishingAttemptSchema.index({ createdBy: 1, createdAt: -1 });

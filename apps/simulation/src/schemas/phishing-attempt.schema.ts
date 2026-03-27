@@ -19,7 +19,7 @@ export class PhishingAttempt extends Document {
   @Prop()
   clickedAt?: Date;
 
-  @Prop({ required: true })
+  @Prop({ required: true, unique: true })
   attemptId!: string;
 }
 

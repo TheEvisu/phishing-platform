@@ -8,10 +8,14 @@ import { AppService } from './app.service';
 import { PhishingController } from './phishing/phishing.controller';
 import { PhishingService } from './phishing/phishing.service';
 import { PhishingAttempt, PhishingAttemptSchema } from './schemas/phishing-attempt.schema';
+import { validationSchema } from './config/validation';
 
 @Module({
   imports: [
-    ConfigModule.forRoot(),
+    ConfigModule.forRoot({
+      validationSchema,
+      validationOptions: { abortEarly: false },
+    }),
     MongooseModule.forRoot(
       process.env.MONGODB_URI || 'mongodb://localhost:27017/phishing-simulation',
     ),

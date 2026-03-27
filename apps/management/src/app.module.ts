@@ -8,10 +8,14 @@ import { AttemptsModule } from './attempts/attempts.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { LoggerMiddleware } from './common/logger.middleware';
+import { validationSchema } from './config/validation';
 
 @Module({
   imports: [
-    ConfigModule.forRoot(),
+    ConfigModule.forRoot({
+      validationSchema,
+      validationOptions: { abortEarly: false },
+    }),
     MongooseModule.forRoot(
       process.env.MONGODB_URI || 'mongodb://localhost:27017/phishing-management',
     ),

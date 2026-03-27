@@ -1,7 +1,7 @@
 import { IsString, IsNotEmpty, MaxLength, IsIn } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export const TEMPLATE_CATEGORIES = ['IT', 'HR', 'Finance', 'Executive'] as const;
+const TEMPLATE_CATEGORIES = ['IT', 'HR', 'Finance', 'Executive'] as const;
 
 export class CreateTemplateDto {
   @ApiProperty({ example: 'Password Expiry Warning', maxLength: 100 })

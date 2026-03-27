@@ -7,8 +7,8 @@ A NestJS monorepo for running internal phishing simulation campaigns. Security t
 ```
 phishing-platform/
 ├── apps/
-│   ├── management/   # REST API for auth, campaigns, attempt tracking  (port 3001)
-│   └── simulation/   # Internal service: sends emails, records clicks   (port 3000)
+│   ├── management/   # REST API for auth, campaigns, templates, attempt tracking  (port 3001)
+│   └── simulation/   # Internal service: sends emails, records clicks             (port 3000)
 └── libs/
     └── shared/       # AttemptStatus enum + Winston logger config
 ```
@@ -16,7 +16,7 @@ phishing-platform/
 The two services communicate over HTTP: when a user creates a phishing attempt via the Management API, it calls `POST /phishing/send` on the Simulation service. When a recipient clicks the link in the email, the Simulation service records the event and shows an awareness page.
 
 ```
-Client → Management (3001) → Simulation (3000) → SMTP server
+Browser → Management (3001) → Simulation (3000) → SMTP server
                                      ↑
                               MongoDB stores attempt,
                               click timestamp, status
@@ -38,10 +38,10 @@ npm install
 
 ## Environment Variables
 
-Each service reads from a `.env` file in the project root. Create one before starting:
+Create a `.env` file in the project root before starting:
 
 ```bash
-cp .env.example .env   # or create manually
+cp .env.example .env
 ```
 
 ### Management Service
@@ -72,18 +72,14 @@ cp .env.example .env   # or create manually
 ### Example `.env`
 
 ```env
-# Shared / Management
 NODE_ENV=development
 JWT_SECRET=my-super-secret-key-that-is-at-least-32-chars
 
-# Simulation SMTP
 SMTP_USER=you@gmail.com
 SMTP_PASS=app-password-here
 ```
 
 ## Running
-
-Open two terminals:
 
 ```bash
 # Terminal 1 – Management service
@@ -108,60 +104,58 @@ Both services hot-reload on save via `ts-node-dev`.
 
 ### Management API (port 3001)
 
-All `/attempts` endpoints require a `Bearer <token>` header.
+#### Authentication
 
-#### Auth
+Auth uses **httpOnly cookies**. On login/register the server sets an `access_token` cookie (`httpOnly`, `SameSite=Strict`, `Secure` in production). The browser sends it automatically on every subsequent request — no `Authorization` header needed.
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| `POST` | `/auth/register` | No | Register a new user |
-| `POST` | `/auth/login` | No | Login, get JWT |
-| `GET` | `/auth/profile` | JWT | Get current user info |
+| `POST` | `/auth/register` | No | Register a new user, sets auth cookie |
+| `POST` | `/auth/login` | No | Login, sets auth cookie |
+| `POST` | `/auth/logout` | No | Clears the auth cookie |
+| `GET` | `/auth/profile` | Cookie | Get current user info |
 
-**Register**
-```http
-POST /auth/register
-Content-Type: application/json
-
-{
-  "username": "alice",          // max 50 chars
-  "email": "alice@example.com", // valid email, max 254 chars
-  "password": "secret123"       // min 6, max 128 chars
-}
-```
-Response `201`:
+**Register / Login request body:**
 ```json
-{ "access_token": "<jwt>", "user": { "username": "alice", "email": "alice@example.com" } }
-```
-Errors: `400` validation, `409` username/email taken.
+// POST /auth/register
+{
+  "username": "alice",           // max 50 chars
+  "email": "alice@example.com",  // valid email, max 254 chars
+  "password": "secret123"        // min 6, max 128 chars
+}
 
-**Login**
-```http
-POST /auth/login
-Content-Type: application/json
-
+// POST /auth/login
 { "username": "alice", "password": "secret123" }
 ```
-Response `201`: same shape as register.
-Errors: `400` validation, `401` wrong credentials.
 
+**Response `201`** (register and login return the same shape):
+```json
+{ "user": { "id": "...", "username": "alice", "email": "alice@example.com", "role": "user" } }
+```
+
+The JWT is stored in the `access_token` httpOnly cookie (24 h expiry).
+
+Errors: `400` validation, `401` wrong credentials, `409` username/email taken.
 **Rate limit:** 10 requests / 60 s on register and login.
 
 ---
 
 #### Attempts
 
+All `/attempts` endpoints require the auth cookie.
+
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/attempts` | List your attempts (paginated) |
-| `POST` | `/attempts` | Create attempt + send email |
+| `GET` | `/attempts/stats` | Aggregated stats for your attempts |
+| `POST` | `/attempts` | Create one attempt + send email |
+| `POST` | `/attempts/bulk` | Create up to 500 attempts in one request |
 | `GET` | `/attempts/:id` | Get one attempt |
 | `DELETE` | `/attempts/:id` | Delete an attempt |
 
 **List attempts**
 ```http
 GET /attempts?page=1&limit=10
-Authorization: Bearer <token>
 ```
 Response `200`:
 ```json
@@ -175,21 +169,81 @@ Response `200`:
 ```
 `page` defaults to 1, `limit` defaults to 10 (max 100). Only returns attempts created by the authenticated user.
 
-**Create attempt**
+**Stats**
+```http
+GET /attempts/stats
+```
+Response `200`:
+```json
+{ "total": 100, "sent": 90, "clicked": 23, "failed": 10, "clickRate": 25.56 }
+```
+
+**Create one attempt**
 ```http
 POST /attempts
-Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "email": "target@company.com",      // max 254 chars
-  "subject": "Urgent: Reset password", // max 200 chars
-  "content": "Click {{TRACKING_LINK}} to verify your account." // max 50 000 chars
+  "email": "target@company.com",
+  "subject": "Urgent: Reset password",
+  "content": "Click {{TRACKING_LINK}} to verify your account."
 }
 ```
-Use `{{TRACKING_LINK}}` as a placeholder — the Simulation service replaces it with a real tracking URL before sending. Response `201` returns the saved attempt document. Errors: `400` validation, `401` no JWT.
+Use `{{TRACKING_LINK}}` as a placeholder — the Simulation service replaces it with a real tracking URL before sending. Response `201` returns the saved attempt document.
+
+**Bulk send**
+```http
+POST /attempts/bulk
+Content-Type: application/json
+
+{
+  "emails": ["alice@company.com", "bob@company.com"],
+  "subject": "Action Required",
+  "content": "Click {{TRACKING_LINK}} to verify."
+}
+```
+`emails` array: 1–500 entries. Response `201`:
+```json
+{ "sent": 2, "failed": 0, "total": 2 }
+```
 
 **Ownership**: `GET /:id` and `DELETE /:id` return `403` if the attempt belongs to a different user, `404` if it does not exist.
+
+---
+
+#### Templates
+
+All `/templates` endpoints require the auth cookie.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/templates` | List your templates |
+| `POST` | `/templates` | Create a template |
+| `DELETE` | `/templates/:id` | Delete a template |
+| `POST` | `/templates/seed` | Load 6 pre-built convincing phishing templates |
+
+**Create template**
+```http
+POST /templates
+Content-Type: application/json
+
+{
+  "name": "Password Expiry Warning",
+  "subject": "Action Required: Your Password Expires in 24 Hours",
+  "content": "Dear employee,\n\nYour password expires soon. Click {{TRACKING_LINK}} to reset it.",
+  "category": "IT"
+}
+```
+`category` must be one of: `IT`, `HR`, `Finance`, `Executive`.
+
+**Seed default templates**
+```http
+POST /templates/seed
+```
+Creates 6 pre-built convincing English phishing templates (Password Expiry, Unusual Sign-In, HR Handbook, Invoice Approval, Security Patch, CEO Message). Skips duplicates if already seeded. Response:
+```json
+{ "created": 6, "skipped": 0 }
+```
 
 ---
 
@@ -198,7 +252,7 @@ Use `{{TRACKING_LINK}}` as a placeholder — the Simulation service replaces it 
 ```http
 GET /health
 ```
-Response `200` (healthy):
+Response `200`:
 ```json
 {
   "status": "ok",
@@ -214,7 +268,7 @@ Returns `503` if MongoDB is unreachable or heap exceeds 300 MB.
 
 ### Simulation API (port 3000)
 
-This service is intended to be called internally by the Management service, not by end users.
+This service is called internally by the Management service, not by end users directly.
 
 | Method | Path | Description |
 |---|---|---|
@@ -240,20 +294,20 @@ Response `201`: `{ "success": true, "attemptId": "..." }`. Rate limit: 20 reques
 ```
 GET /phishing/click/:attemptId
 ```
-Updates `status → clicked` and `clickedAt` on the attempt, then returns an HTML awareness page ("You clicked on a phishing simulation link…"). Always returns `200` even if the `attemptId` is not found.
+Updates `status → clicked` and `clickedAt` on the attempt, then returns an HTML awareness page. Always returns `200` even if `attemptId` is unknown.
 
 ---
 
 ## Attempt Lifecycle
 
 ```
-POST /attempts  →  status: pending
-                →  Simulation sends email  →  status: sent
-Recipient clicks link  →  status: clicked, clickedAt: <timestamp>
-Simulation SMTP error  →  status: failed
+POST /attempts       →  status: pending
+                     →  Simulation sends email  →  status: sent
+Recipient clicks     →  status: clicked, clickedAt: <timestamp>
+SMTP error           →  status: failed
 ```
 
-Status values are defined in `libs/shared/src/enums/attempt-status.enum.ts`.
+Status values: `pending | sent | clicked | failed` — defined in `libs/shared/src/enums/attempt-status.enum.ts`.
 
 ## Testing
 
@@ -268,22 +322,23 @@ npm run test:watch
 npm run test:cov
 ```
 
-Unit specs live alongside source files (`*.spec.ts`). E2e suites are in `apps/*/test/app.e2e-spec.ts`. No real database or SMTP server is needed — all external dependencies are mocked.
+Unit specs live alongside source files (`*.spec.ts`). E2e suites are in `apps/*/test/app.e2e-spec.ts`. All external dependencies (MongoDB, SMTP) are mocked.
 
-## Security Features
+## Security
 
 | Feature | Detail |
 |---|---|
+| httpOnly cookies | JWT stored in `httpOnly + SameSite=Strict` cookie — inaccessible to JavaScript |
 | Helmet | HTTP security headers on every response |
-| Rate limiting | Global 100 req / 60 s; stricter limits on auth (10/60 s) and send (20/60 s) |
-| JWT auth | RS256-style HMAC, 24 h expiry; all `/attempts` routes require valid token |
-| User isolation | Queries and ownership checks scope all data to `createdBy: username` |
-| Validation | `ValidationPipe` with `whitelist` + `forbidNonWhitelisted`; all fields have `MaxLength` |
-| Env validation | Joi schema validates required vars at startup; service refuses to start if misconfigured |
-| Password hashing | bcryptjs with salt rounds |
-| Winston logging | Structured JSON in production, colorized in development; no sensitive data logged |
+| Rate limiting | Global 100 req / 60 s; auth endpoints 10 / 60 s; simulation send 20 / 60 s |
+| JWT | HMAC-signed, 24 h expiry |
+| User isolation | All queries scoped to `createdBy: username`; ownership enforced on get/delete |
+| Validation | `ValidationPipe` with `whitelist + forbidNonWhitelisted`; all fields have `MaxLength` |
+| Env validation | Joi schema at startup — service refuses to start if required vars are missing |
+| Password hashing | bcryptjs, 12 salt rounds |
+| Winston logging | Structured JSON in production, colorized in dev; no sensitive data logged |
 | Graceful shutdown | `enableShutdownHooks()` drains connections on SIGTERM/SIGINT |
-| Axios timeout | 5 s timeout on Management → Simulation calls; prevents hanging on SMTP delays |
+| Axios timeout | 5 s timeout on Management → Simulation calls |
 
 ## Project Structure
 
@@ -291,31 +346,37 @@ Unit specs live alongside source files (`*.spec.ts`). E2e suites are in `apps/*/
 apps/
   management/
     src/
-      auth/           # JWT strategy, guards, register/login
-      attempts/       # CRUD + pagination + user isolation
+      auth/           # JWT strategy (cookie-based), guards, register/login/logout
+      attempts/       # CRUD, pagination, bulk send, stats, user isolation
+      templates/      # CRUD + seed with 6 pre-built templates
       health/         # /health endpoint (MongoDB + memory)
       common/         # HTTP logger middleware
-      config/         # Joi validation schema
-      dto/            # auth.dto, phishing-attempt.dto, pagination.dto
-      schemas/        # Mongoose: User, PhishingAttempt (+compound index)
+      config/         # Joi env validation schema
+      dto/            # auth.dto, phishing-attempt.dto, template.dto, pagination.dto
+      schemas/        # Mongoose: User, PhishingAttempt, Template
     test/             # e2e test suite
   simulation/
     src/
       phishing/       # sendPhishingEmail, trackClick
       health/         # /health endpoint
-      config/         # Joi validation schema
+      config/         # Joi env validation schema
       dto/            # send-phishing.dto
       schemas/        # Mongoose: PhishingAttempt
     test/             # e2e test suite
 libs/
   shared/
     src/
-      enums/          # AttemptStatus (PENDING, SENT, CLICKED, FAILED)
+      enums/          # AttemptStatus (pending, sent, clicked, failed)
       logger.config   # Shared Winston config used by both services
 ```
 
 ## MongoDB Indexes
 
-The `phishing-attempt` collection in the Management database has a compound index on `{ createdBy: 1, createdAt: -1 }`, which covers the paginated list query (`find({ createdBy }) + sort({ createdAt: -1 })`).
+| Collection (Management DB) | Index | Purpose |
+|---|---|---|
+| `phishing-attempts` | `{ createdBy: 1, createdAt: -1 }` | Paginated list query |
+| `templates` | `{ createdBy: 1, createdAt: -1 }` | Template list query |
 
-The `phishing-attempt` collection in the Simulation database has a unique index on `attemptId`.
+| Collection (Simulation DB) | Index | Purpose |
+|---|---|---|
+| `phishing-attempts` | `{ attemptId: 1 }` unique | Fast click-tracking lookup |

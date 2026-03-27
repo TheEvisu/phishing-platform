@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -21,9 +22,19 @@ async function bootstrap() {
     credentials: true,
   });
 
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('Phishing Management API')
+    .setDescription('API for managing phishing simulation campaigns')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api/docs', app, document);
+
   const port = process.env.PORT || 3001;
   await app.listen(port);
   console.log(`phishing-management-service is running on port:${port}`);
+  console.log(`Swagger docs available at http://localhost:${port}/api/docs`);
 }
 
 bootstrap();

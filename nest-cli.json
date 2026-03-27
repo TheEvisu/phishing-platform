@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json.schemastore.org/nest-cli",
+  "monorepo": true,
+  "sourceRoot": "apps/management/src",
+  "compilerOptions": {
+    "tsConfigPath": "apps/management/tsconfig.app.json"
+  },
+  "projects": {
+    "management": {
+      "type": "application",
+      "root": "apps/management",
+      "entryFile": "main",
+      "sourceRoot": "apps/management/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/management/tsconfig.app.json"
+      }
+    },
+    "simulation": {
+      "type": "application",
+      "root": "apps/simulation",
+      "entryFile": "main",
+      "sourceRoot": "apps/simulation/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/simulation/tsconfig.app.json"
+      }
+    },
+    "shared": {
+      "type": "library",
+      "root": "libs/shared",
+      "entryFile": "index",
+      "sourceRoot": "libs/shared/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/shared/tsconfig.lib.json"
+      }
+    }
+  }
+}

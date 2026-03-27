@@ -4,10 +4,12 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { WinstonModule } from 'nest-winston';
+import { TerminusModule } from '@nestjs/terminus';
 import { AuthModule } from './auth/auth.module';
 import { AttemptsModule } from './attempts/attempts.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { HealthController } from './health/health.controller';
 import { LoggerMiddleware } from './common/logger.middleware';
 import { validationSchema } from './config/validation';
 import { createLoggerConfig } from '@app/shared';
@@ -23,10 +25,11 @@ import { createLoggerConfig } from '@app/shared';
       process.env.MONGODB_URI || 'mongodb://localhost:27017/phishing-management',
     ),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    TerminusModule,
     AuthModule,
     AttemptsModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, HealthController],
   providers: [
     AppService,
     { provide: APP_GUARD, useClass: ThrottlerGuard },

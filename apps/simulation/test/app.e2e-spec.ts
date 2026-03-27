@@ -86,6 +86,13 @@ describe('Simulation Service (e2e)', () => {
         .expect(400);
     });
 
+    it('400: subject exceeds MaxLength', async () => {
+      await request(app.getHttpServer())
+        .post('/phishing/send')
+        .send({ ...validDto, subject: 'a'.repeat(201) })
+        .expect(400);
+    });
+
     it('400: missing required fields', async () => {
       await request(app.getHttpServer())
         .post('/phishing/send')

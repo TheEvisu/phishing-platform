@@ -147,6 +147,13 @@ describe('Management Service (e2e)', () => {
         .expect(400);
     });
 
+    it('400: username exceeds MaxLength', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/register')
+        .send({ username: 'a'.repeat(51), email: 'user@example.com', password: 'password123' })
+        .expect(400);
+    });
+
     it('409: username or email already taken', async () => {
       mockUserFindOne.mockResolvedValueOnce({ ...testUser, password: hashedPassword });
 

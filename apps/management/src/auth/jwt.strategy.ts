@@ -1,11 +1,13 @@
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  private readonly logger = new Logger(JwtStrategy.name);
+
   constructor(
     private authService: AuthService,
     private configService: ConfigService,
@@ -17,15 +19,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: any) {
-    try {
-      console.log('[JwtStrategy] validating payload:', JSON.stringify(payload));
-    } catch (e) {
-      console.log('[JwtStrategy] validating payload (unserializable)');
-    }
-
+  async validate(payload: { username: string; sub: string }) {
     const user = await this.authService.validateUser(payload.username);
-    console.log('[JwtStrategy] user found:', !!user);
+    if (!user) {
+      this.logger.warn(`JWT validation failed: user not found`);
+    }
     return user;
   }
 }

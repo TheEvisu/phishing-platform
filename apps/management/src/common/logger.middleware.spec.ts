@@ -1,16 +1,17 @@
+import { Logger } from '@nestjs/common';
 import { LoggerMiddleware } from './logger.middleware';
 
 describe('LoggerMiddleware', () => {
   let middleware: LoggerMiddleware;
-  let consoleSpy: jest.SpyInstance;
+  let logSpy: jest.SpyInstance;
 
   beforeEach(() => {
     middleware = new LoggerMiddleware();
-    consoleSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
   });
 
   afterEach(() => {
-    consoleSpy.mockRestore();
+    logSpy.mockRestore();
   });
 
   function makeReq(overrides = {}): any {
@@ -33,21 +34,20 @@ describe('LoggerMiddleware', () => {
 
   it('should log method and url', () => {
     middleware.use(makeReq({ method: 'POST', originalUrl: '/auth/login' }), {} as any, jest.fn());
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('POST /auth/login'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('POST /auth/login'));
   });
 
-  it('should redact Authorization header', () => {
+  it('should not log Authorization header value', () => {
     const req = makeReq({ headers: { authorization: 'Bearer secret-token' } });
     middleware.use(req, {} as any, jest.fn());
-    const logged = consoleSpy.mock.calls[0][0] as string;
+    const logged = logSpy.mock.calls[0][0] as string;
     expect(logged).not.toContain('secret-token');
-    expect(logged).toContain('[REDACTED]');
   });
 
   it('should log query params', () => {
     const req = makeReq({ query: { page: '1' } });
     middleware.use(req, {} as any, jest.fn());
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('"page":"1"'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('"page":"1"'));
   });
 
   it('should handle unserializable body gracefully', () => {

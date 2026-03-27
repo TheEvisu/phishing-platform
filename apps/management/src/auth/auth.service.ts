@@ -2,6 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   ConflictException,
+  Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -12,6 +13,8 @@ import { RegisterDto, LoginDto } from '../dto/auth.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
     private jwtService: JwtService,
@@ -81,7 +84,7 @@ export class AuthService {
 
   async validateUser(username: string): Promise<any> {
     const user = await this.userModel.findOne({ username });
-    console.log('[AuthService] validateUser lookup for:', username, 'found:', !!user);
+    this.logger.debug(`validateUser: found=${!!user}`);
     if (user) {
       return {
         id: user._id,

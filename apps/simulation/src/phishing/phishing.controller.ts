@@ -1,4 +1,5 @@
 import { Controller, Post, Body, Get, Param, Res } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { PhishingService } from './phishing.service';
 import { SendPhishingDto } from '../dto/send-phishing.dto';
@@ -7,6 +8,7 @@ import { SendPhishingDto } from '../dto/send-phishing.dto';
 export class PhishingController {
   constructor(private readonly phishingService: PhishingService) {}
 
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('send')
   async sendPhishing(@Body() sendPhishingDto: SendPhishingDto) {
     return await this.phishingService.sendPhishingEmail(sendPhishingDto);

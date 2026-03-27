@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AttemptsService } from './attempts.service';
-import { CreatePhishingAttemptDto } from '../dto/phishing-attempt.dto';
+import { CreatePhishingAttemptDto, BulkPhishingAttemptDto } from '../dto/phishing-attempt.dto';
 import { PaginationDto } from '../dto/pagination.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -37,6 +37,13 @@ export class AttemptsController {
     );
   }
 
+  @ApiOperation({ summary: 'Get stats for your attempts' })
+  @ApiResponse({ status: 200, description: 'Returns total, sent, clicked, failed, clickRate.' })
+  @Get('stats')
+  async getStats(@Request() req: { user: { username: string } }) {
+    return this.attemptsService.getStats(req.user.username);
+  }
+
   @ApiOperation({ summary: 'Create a new phishing attempt' })
   @ApiResponse({ status: 201, description: 'Attempt created and email dispatched to simulation service.' })
   @ApiResponse({ status: 400, description: 'Validation error.' })
@@ -47,6 +54,17 @@ export class AttemptsController {
     @Request() req: { user: { username: string } },
   ) {
     return await this.attemptsService.createAttempt(createAttemptDto, req.user.username);
+  }
+
+  @ApiOperation({ summary: 'Send phishing emails in bulk' })
+  @ApiResponse({ status: 201, description: 'Returns { sent, failed, total }.' })
+  @ApiResponse({ status: 400, description: 'Validation error.' })
+  @Post('bulk')
+  async bulkCreateAttempts(
+    @Body() dto: BulkPhishingAttemptDto,
+    @Request() req: { user: { username: string } },
+  ) {
+    return this.attemptsService.bulkCreateAttempts(dto, req.user.username);
   }
 
   @ApiOperation({ summary: 'Get a phishing attempt by ID' })

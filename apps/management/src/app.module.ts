@@ -7,6 +7,7 @@ import { WinstonModule } from 'nest-winston';
 import { TerminusModule } from '@nestjs/terminus';
 import { AuthModule } from './auth/auth.module';
 import { AttemptsModule } from './attempts/attempts.module';
+import { TemplatesModule } from './templates/templates.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './health/health.controller';
@@ -28,6 +29,7 @@ import { createLoggerConfig } from '@app/shared';
     TerminusModule,
     AuthModule,
     AttemptsModule,
+    TemplatesModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

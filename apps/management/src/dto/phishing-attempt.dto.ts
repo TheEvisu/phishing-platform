@@ -1,4 +1,4 @@
-import { IsEmail, IsString, IsNotEmpty, MaxLength, IsArray, ArrayMinSize, ArrayMaxSize, IsIn, IsOptional, IsDateString } from 'class-validator';
+import { IsEmail, IsString, IsNotEmpty, MaxLength, IsArray, ArrayMinSize, ArrayMaxSize, IsIn, IsOptional, IsDateString, IsMongoId } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { AttemptStatus } from '@app/shared';
 
@@ -52,6 +52,15 @@ export class BulkPhishingAttemptDto {
   @IsNotEmpty()
   @MaxLength(50_000)
   content!: string;
+}
+
+export class BulkDeleteDto {
+  @ApiProperty({ type: [String], description: 'Array of attempt MongoDB IDs to delete' })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(500)
+  @IsMongoId({ each: true })
+  ids!: string[];
 }
 
 export class UpdateAttemptStatusDto {

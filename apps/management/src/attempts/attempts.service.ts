@@ -13,6 +13,7 @@ interface StatusEvent {
   attemptId: string;
   status: AttemptStatus;
   createdBy: string;
+  email?: string;
   clickedAt?: Date;
 }
 
@@ -34,7 +35,7 @@ export class AttemptsService {
     const events$ = this.statusBus$.pipe(
       filter((e) => e.createdBy === username),
       map((e) => ({
-        data: { type: 'status_change', attemptId: e.attemptId, status: e.status, clickedAt: e.clickedAt },
+        data: { type: 'status_change', attemptId: e.attemptId, status: e.status, email: e.email, clickedAt: e.clickedAt },
       } as MessageEvent)),
     );
 
@@ -62,6 +63,7 @@ export class AttemptsService {
         attemptId,
         status,
         createdBy: attempt.createdBy,
+        email: attempt.email,
         clickedAt: update.clickedAt,
       });
     }
@@ -71,8 +73,17 @@ export class AttemptsService {
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
 
-  async getAllAttempts(username: string, page: number, limit: number) {
-    const f = { createdBy: username };
+  async getAllAttempts(
+    username: string,
+    page: number,
+    limit: number,
+    status?: AttemptStatus,
+    email?: string,
+  ) {
+    const f: Record<string, unknown> = { createdBy: username };
+    if (status) f.status = status;
+    if (email) f.email = { $regex: email, $options: 'i' };
+
     const skip = (page - 1) * limit;
 
     const [data, total] = await Promise.all([
@@ -141,6 +152,53 @@ export class AttemptsService {
     return { sent, failed, total: dto.emails.length };
   }
 
+  async exportAttempts(username: string) {
+    return this.phishingAttemptModel
+      .find({ createdBy: username })
+      .sort({ createdAt: -1 })
+      .select('email subject status attemptId clickedAt createdAt')
+      .lean()
+      .exec();
+  }
+
+  async getTimeline(username: string, days = 14) {
+    const since = new Date();
+    since.setDate(since.getDate() - days + 1);
+    since.setHours(0, 0, 0, 0);
+
+    const raw = await this.phishingAttemptModel.aggregate([
+      { $match: { createdBy: username, createdAt: { $gte: since } } },
+      {
+        $group: {
+          _id: {
+            date: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            status: '$status',
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { '_id.date': 1 } },
+    ]);
+
+    // Build a full date range with zeros for missing days
+    const map: Record<string, { sent: number; clicked: number; failed: number }> = {};
+    for (let i = 0; i < days; i++) {
+      const d = new Date(since);
+      d.setDate(since.getDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      map[key] = { sent: 0, clicked: 0, failed: 0 };
+    }
+
+    for (const row of raw) {
+      const { date, status } = row._id as { date: string; status: string };
+      if (map[date] && (status === 'sent' || status === 'clicked' || status === 'failed')) {
+        map[date][status as 'sent' | 'clicked' | 'failed'] += row.count as number;
+      }
+    }
+
+    return Object.entries(map).map(([date, counts]) => ({ date, ...counts }));
+  }
+
   async getStats(username: string) {
     const f = { createdBy: username };
     const [total, sent, clicked, failed] = await Promise.all([
@@ -166,5 +224,13 @@ export class AttemptsService {
     if (attempt.createdBy !== username) throw new ForbiddenException('Access denied');
     await this.phishingAttemptModel.findByIdAndDelete(id);
     return { message: 'Phishing attempt deleted successfully' };
+  }
+
+  async bulkDeleteAttempts(ids: string[], username: string) {
+    const result = await this.phishingAttemptModel.deleteMany({
+      _id: { $in: ids },
+      createdBy: username,
+    });
+    return { deleted: result.deletedCount };
   }
 }

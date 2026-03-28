@@ -25,6 +25,7 @@ async function bootstrap() {
     origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
+    exposedHeaders: ['X-App-Version'],
   });
 
   const swaggerConfig = new DocumentBuilder()

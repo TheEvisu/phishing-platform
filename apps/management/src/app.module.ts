@@ -12,6 +12,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './health/health.controller';
 import { LoggerMiddleware } from './common/logger.middleware';
+import { VersionMiddleware } from './common/version.middleware';
 import { validationSchema } from './config/validation';
 import { createLoggerConfig } from '@app/shared';
 
@@ -39,6 +40,6 @@ import { createLoggerConfig } from '@app/shared';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(LoggerMiddleware).forRoutes('*');
+    consumer.apply(LoggerMiddleware, VersionMiddleware).forRoutes('*');
   }
 }

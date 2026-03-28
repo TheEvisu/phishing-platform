@@ -157,8 +157,16 @@ export class TemplatesService {
   }
 
   async seedDefaults(username: string) {
+    const existing = await this.templateModel
+      .find({ createdBy: username })
+      .select('name')
+      .lean()
+      .exec();
+    const existingNames = new Set(existing.map((t) => t.name));
+
     const created: Template[] = [];
     for (const t of DEFAULT_TEMPLATES) {
+      if (existingNames.has(t.name)) continue;
       const doc = new this.templateModel({ ...t, createdBy: username });
       await doc.save();
       created.push(doc);

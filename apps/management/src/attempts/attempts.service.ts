@@ -1,40 +1,86 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { Observable, Subject, merge, interval } from 'rxjs';
+import { filter, map } from 'rxjs/operators';
 import axios from 'axios';
 import { PhishingAttempt } from '../schemas/phishing-attempt.schema';
 import { CreatePhishingAttemptDto, BulkPhishingAttemptDto } from '../dto/phishing-attempt.dto';
 import { AttemptStatus } from '@app/shared';
 import { v4 as uuidv4 } from 'uuid';
 
+interface StatusEvent {
+  attemptId: string;
+  status: AttemptStatus;
+  createdBy: string;
+  clickedAt?: Date;
+}
+
 @Injectable()
 export class AttemptsService {
+  // In-memory event bus — broadcasts status changes to all active SSE connections.
+  private readonly statusBus$ = new Subject<StatusEvent>();
+
   constructor(
     @InjectModel(PhishingAttempt.name)
     private phishingAttemptModel: Model<PhishingAttempt>,
   ) {}
 
+  // ─── SSE stream ───────────────────────────────────────────────────────────
+
+  /** Returns an Observable that emits MessageEvents for a specific user's attempts.
+   *  A heartbeat fires every 25 s to prevent proxy timeouts. */
+  watchAttempts(username: string): Observable<MessageEvent> {
+    const events$ = this.statusBus$.pipe(
+      filter((e) => e.createdBy === username),
+      map((e) => ({
+        data: { type: 'status_change', attemptId: e.attemptId, status: e.status, clickedAt: e.clickedAt },
+      } as MessageEvent)),
+    );
+
+    const heartbeat$ = interval(25_000).pipe(
+      map(() => ({ data: { type: 'heartbeat' } } as MessageEvent)),
+    );
+
+    return merge(events$, heartbeat$);
+  }
+
+  // ─── Internal status update (called by Simulation service) ────────────────
+
+  async updateAttemptStatus(attemptId: string, status: AttemptStatus, clickedAt?: string) {
+    const update: Partial<PhishingAttempt> = { status };
+    if (clickedAt) update.clickedAt = new Date(clickedAt);
+
+    const attempt = await this.phishingAttemptModel.findOneAndUpdate(
+      { attemptId },
+      update,
+      { new: true },
+    );
+
+    if (attempt) {
+      this.statusBus$.next({
+        attemptId,
+        status,
+        createdBy: attempt.createdBy,
+        clickedAt: update.clickedAt,
+      });
+    }
+
+    return attempt;
+  }
+
+  // ─── CRUD ─────────────────────────────────────────────────────────────────
+
   async getAllAttempts(username: string, page: number, limit: number) {
-    const filter = { createdBy: username };
+    const f = { createdBy: username };
     const skip = (page - 1) * limit;
 
     const [data, total] = await Promise.all([
-      this.phishingAttemptModel
-        .find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .exec(),
-      this.phishingAttemptModel.countDocuments(filter),
+      this.phishingAttemptModel.find(f).sort({ createdAt: -1 }).skip(skip).limit(limit).exec(),
+      this.phishingAttemptModel.countDocuments(f),
     ]);
 
-    return {
-      data,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async createAttempt(createAttemptDto: CreatePhishingAttemptDto, username: string) {
@@ -45,61 +91,38 @@ export class AttemptsService {
       attemptId,
       createdBy: username,
     });
-
     await attempt.save();
 
     try {
-      const simulationServiceUrl =
-        process.env.PHISHING_SIMULATION_URL || 'http://localhost:3000';
+      const simulationUrl = process.env.PHISHING_SIMULATION_URL || 'http://localhost:3000';
       await axios.post(
-        `${simulationServiceUrl}/phishing/send`,
-        {
-          recipientEmail: createAttemptDto.email,
-          subject: createAttemptDto.subject,
-          content: createAttemptDto.content,
-          attemptId,
-        },
+        `${simulationUrl}/phishing/send`,
+        { recipientEmail: createAttemptDto.email, subject: createAttemptDto.subject, content: createAttemptDto.content, attemptId },
         { timeout: 5_000 },
       );
-
       return attempt;
     } catch (error) {
       attempt.status = AttemptStatus.FAILED;
       await attempt.save();
+      this.statusBus$.next({ attemptId, status: AttemptStatus.FAILED, createdBy: username });
       throw error;
     }
   }
 
-  async getAttemptById(id: string, username: string) {
-    const attempt = await this.phishingAttemptModel.findById(id);
-    if (!attempt) {
-      throw new NotFoundException('Phishing attempt not found');
-    }
-    if (attempt.createdBy !== username) {
-      throw new ForbiddenException('Access denied');
-    }
-    return attempt;
-  }
-
   async bulkCreateAttempts(dto: BulkPhishingAttemptDto, username: string) {
-    const simulationServiceUrl =
-      process.env.PHISHING_SIMULATION_URL || 'http://localhost:3000';
+    const simulationUrl = process.env.PHISHING_SIMULATION_URL || 'http://localhost:3000';
 
     const results = await Promise.allSettled(
       dto.emails.map(async (email) => {
         const attemptId = uuidv4();
         const attempt = new this.phishingAttemptModel({
-          email,
-          subject: dto.subject,
-          content: dto.content,
-          attemptId,
-          createdBy: username,
+          email, subject: dto.subject, content: dto.content, attemptId, createdBy: username,
         });
         await attempt.save();
 
         try {
           await axios.post(
-            `${simulationServiceUrl}/phishing/send`,
+            `${simulationUrl}/phishing/send`,
             { recipientEmail: email, subject: dto.subject, content: dto.content, attemptId },
             { timeout: 5_000 },
           );
@@ -107,39 +130,40 @@ export class AttemptsService {
         } catch {
           attempt.status = AttemptStatus.FAILED;
           await attempt.save();
+          this.statusBus$.next({ attemptId, status: AttemptStatus.FAILED, createdBy: username });
           return attempt;
         }
       }),
     );
 
-    const sent = results.filter((r) => r.status === 'fulfilled').length;
+    const sent   = results.filter((r) => r.status === 'fulfilled').length;
     const failed = results.filter((r) => r.status === 'rejected').length;
     return { sent, failed, total: dto.emails.length };
   }
 
   async getStats(username: string) {
-    const filter = { createdBy: username };
+    const f = { createdBy: username };
     const [total, sent, clicked, failed] = await Promise.all([
-      this.phishingAttemptModel.countDocuments(filter),
-      this.phishingAttemptModel.countDocuments({ ...filter, status: AttemptStatus.SENT }),
-      this.phishingAttemptModel.countDocuments({ ...filter, status: AttemptStatus.CLICKED }),
-      this.phishingAttemptModel.countDocuments({ ...filter, status: AttemptStatus.FAILED }),
+      this.phishingAttemptModel.countDocuments(f),
+      this.phishingAttemptModel.countDocuments({ ...f, status: AttemptStatus.SENT }),
+      this.phishingAttemptModel.countDocuments({ ...f, status: AttemptStatus.CLICKED }),
+      this.phishingAttemptModel.countDocuments({ ...f, status: AttemptStatus.FAILED }),
     ]);
-
-    const clickRate =
-      sent + clicked > 0 ? Math.round((clicked / (sent + clicked)) * 100) : 0;
-
+    const clickRate = sent + clicked > 0 ? Math.round((clicked / (sent + clicked)) * 100) : 0;
     return { total, sent, clicked, failed, clickRate };
+  }
+
+  async getAttemptById(id: string, username: string) {
+    const attempt = await this.phishingAttemptModel.findById(id);
+    if (!attempt) throw new NotFoundException('Phishing attempt not found');
+    if (attempt.createdBy !== username) throw new ForbiddenException('Access denied');
+    return attempt;
   }
 
   async deleteAttempt(id: string, username: string) {
     const attempt = await this.phishingAttemptModel.findById(id);
-    if (!attempt) {
-      throw new NotFoundException('Phishing attempt not found');
-    }
-    if (attempt.createdBy !== username) {
-      throw new ForbiddenException('Access denied');
-    }
+    if (!attempt) throw new NotFoundException('Phishing attempt not found');
+    if (attempt.createdBy !== username) throw new ForbiddenException('Access denied');
     await this.phishingAttemptModel.findByIdAndDelete(id);
     return { message: 'Phishing attempt deleted successfully' };
   }

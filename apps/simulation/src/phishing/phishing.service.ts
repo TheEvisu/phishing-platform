@@ -1,13 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as nodemailer from 'nodemailer';
+import axios from 'axios';
 import { PhishingAttempt } from '../schemas/phishing-attempt.schema';
 import { SendPhishingDto } from '../dto/send-phishing.dto';
 import { AttemptStatus } from '@app/shared';
 
 @Injectable()
 export class PhishingService {
+  private readonly logger = new Logger(PhishingService.name);
   private transporter: nodemailer.Transporter;
 
   constructor(
@@ -37,10 +39,7 @@ export class PhishingService {
     });
 
     try {
-      const trackingUrl = `${
-        process.env.APP_URL || 'http://localhost:3001'
-      }/phishing/click/${attemptId}`;
-
+      const trackingUrl = `${process.env.APP_URL || 'http://localhost:3000'}/phishing/click/${attemptId}`;
       const emailContent = content.replace(
         '{{TRACKING_LINK}}',
         `<a href="${trackingUrl}">Click here to verify your account</a>`,
@@ -63,14 +62,33 @@ export class PhishingService {
   }
 
   async trackClick(attemptId: string) {
-    const attempt = await this.phishingAttemptModel.findOne({ attemptId });
+    const clickedAt = new Date();
 
-    if (attempt) {
-      attempt.status = AttemptStatus.CLICKED;
-      attempt.clickedAt = new Date();
-      await attempt.save();
-    }
+    const attempt = await this.phishingAttemptModel.findOneAndUpdate(
+      { attemptId },
+      { status: AttemptStatus.CLICKED, clickedAt },
+      { new: true },
+    );
+
+    // Notify Management service so Dashboard updates in real-time via SSE
+    this.notifyManagement(attemptId, AttemptStatus.CLICKED, clickedAt).catch((err) => {
+      this.logger.warn(`Failed to notify management of click for ${attemptId}: ${err?.message}`);
+    });
 
     return attempt;
+  }
+
+  private async notifyManagement(attemptId: string, status: AttemptStatus, clickedAt?: Date) {
+    const managementUrl = process.env.MANAGEMENT_URL || 'http://localhost:3001';
+    const secret = process.env.INTERNAL_SECRET;
+
+    await axios.patch(
+      `${managementUrl}/attempts/internal/${attemptId}/status`,
+      { status, clickedAt: clickedAt?.toISOString() },
+      {
+        timeout: 3_000,
+        headers: secret ? { 'x-service-key': secret } : {},
+      },
+    );
   }
 }

@@ -1,5 +1,6 @@
-import { IsEmail, IsString, IsNotEmpty, MaxLength, IsArray, ArrayMinSize, ArrayMaxSize } from 'class-validator';
+import { IsEmail, IsString, IsNotEmpty, MaxLength, IsArray, ArrayMinSize, ArrayMaxSize, IsIn, IsOptional, IsDateString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { AttemptStatus } from '@app/shared';
 
 export class CreatePhishingAttemptDto {
   @ApiProperty({ example: 'target@company.com', description: 'Recipient email address', maxLength: 254 })
@@ -51,4 +52,15 @@ export class BulkPhishingAttemptDto {
   @IsNotEmpty()
   @MaxLength(50_000)
   content!: string;
+}
+
+export class UpdateAttemptStatusDto {
+  @ApiProperty({ enum: AttemptStatus, example: AttemptStatus.CLICKED })
+  @IsIn(Object.values(AttemptStatus))
+  status!: AttemptStatus;
+
+  @ApiProperty({ required: false, example: '2026-03-28T10:00:00.000Z' })
+  @IsOptional()
+  @IsDateString()
+  clickedAt?: string;
 }

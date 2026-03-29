@@ -4,11 +4,18 @@ import {
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiExcludeEndpoint } from '@nestjs/swagger';
+import { Types } from 'mongoose';
 import { AttemptsService } from './attempts.service';
 import { CreatePhishingAttemptDto, BulkPhishingAttemptDto, UpdateAttemptStatusDto, BulkDeleteDto } from '../dto/phishing-attempt.dto';
 import { AttemptsQueryDto } from '../dto/pagination.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { InternalGuard } from './internal.guard';
+
+interface UserCtx {
+  username: string;
+  role: string;
+  organizationId: Types.ObjectId;
+}
 
 @ApiTags('attempts')
 @ApiBearerAuth()
@@ -16,117 +23,80 @@ import { InternalGuard } from './internal.guard';
 export class AttemptsController {
   constructor(private readonly attemptsService: AttemptsService) {}
 
-  // ─── SSE ──────────────────────────────────────────────────────────────────
-
-  @ApiOperation({ summary: 'SSE stream — real-time status updates for the authenticated user' })
-  @ApiResponse({ status: 200, description: 'text/event-stream — emits status_change and heartbeat events' })
+  @ApiOperation({ summary: 'SSE stream — real-time status updates' })
   @UseGuards(JwtAuthGuard)
   @Sse('events')
-  events(@Request() req: { user: { username: string } }): Observable<MessageEvent> {
-    return this.attemptsService.watchAttempts(req.user.username);
+  events(@Request() req: { user: UserCtx }): Observable<MessageEvent> {
+    return this.attemptsService.watchAttempts(req.user);
   }
-
-  // ─── Internal (Simulation → Management callback) ─────────────────────────
 
   @ApiExcludeEndpoint()
   @UseGuards(InternalGuard)
   @Patch('internal/:attemptId/status')
-  async updateStatus(
-    @Param('attemptId') attemptId: string,
-    @Body() dto: UpdateAttemptStatusDto,
-  ) {
+  async updateStatus(@Param('attemptId') attemptId: string, @Body() dto: UpdateAttemptStatusDto) {
     return this.attemptsService.updateAttemptStatus(attemptId, dto.status, dto.clickedAt);
   }
 
-  // ─── Protected routes ─────────────────────────────────────────────────────
-
-  @ApiOperation({ summary: 'List your phishing attempts (paginated, filterable)' })
+  @ApiOperation({ summary: 'List phishing attempts (paginated, filterable)' })
   @UseGuards(JwtAuthGuard)
   @Get()
-  async getAllAttempts(
-    @Query() query: AttemptsQueryDto,
-    @Request() req: { user: { username: string } },
-  ) {
-    return this.attemptsService.getAllAttempts(
-      req.user.username,
-      query.page ?? 1,
-      query.limit ?? 10,
-      query.status,
-      query.email,
-    );
+  async getAllAttempts(@Query() query: AttemptsQueryDto, @Request() req: { user: UserCtx }) {
+    return this.attemptsService.getAllAttempts(req.user, query.page ?? 1, query.limit ?? 10, query.status, query.email);
   }
 
-  @ApiOperation({ summary: 'Get stats for your attempts' })
+  @ApiOperation({ summary: 'Get stats' })
   @UseGuards(JwtAuthGuard)
   @Get('stats')
-  async getStats(@Request() req: { user: { username: string } }) {
-    return this.attemptsService.getStats(req.user.username);
+  async getStats(@Request() req: { user: UserCtx }) {
+    return this.attemptsService.getStats(req.user);
   }
 
-  @ApiOperation({ summary: 'Export all attempts as JSON (for CSV download)' })
+  @ApiOperation({ summary: 'Export attempts as JSON' })
   @UseGuards(JwtAuthGuard)
   @Get('export')
-  async exportAttempts(@Request() req: { user: { username: string } }) {
-    return this.attemptsService.exportAttempts(req.user.username);
+  async exportAttempts(@Request() req: { user: UserCtx }) {
+    return this.attemptsService.exportAttempts(req.user);
   }
 
   @ApiOperation({ summary: 'Daily activity timeline (last 14 days)' })
   @UseGuards(JwtAuthGuard)
   @Get('timeline')
-  async getTimeline(@Request() req: { user: { username: string } }) {
-    return this.attemptsService.getTimeline(req.user.username);
+  async getTimeline(@Request() req: { user: UserCtx }) {
+    return this.attemptsService.getTimeline(req.user);
   }
 
   @ApiOperation({ summary: 'Create a new phishing attempt' })
-  @ApiResponse({ status: 201 })
   @UseGuards(JwtAuthGuard)
   @Post()
-  async createAttempt(
-    @Body() dto: CreatePhishingAttemptDto,
-    @Request() req: { user: { username: string } },
-  ) {
-    return this.attemptsService.createAttempt(dto, req.user.username);
+  async createAttempt(@Body() dto: CreatePhishingAttemptDto, @Request() req: { user: UserCtx }) {
+    return this.attemptsService.createAttempt(dto, req.user);
   }
 
   @ApiOperation({ summary: 'Send phishing emails in bulk' })
-  @ApiResponse({ status: 201, description: '{ sent, failed, total }' })
   @UseGuards(JwtAuthGuard)
   @Post('bulk')
-  async bulkCreateAttempts(
-    @Body() dto: BulkPhishingAttemptDto,
-    @Request() req: { user: { username: string } },
-  ) {
-    return this.attemptsService.bulkCreateAttempts(dto, req.user.username);
+  async bulkCreateAttempts(@Body() dto: BulkPhishingAttemptDto, @Request() req: { user: UserCtx }) {
+    return this.attemptsService.bulkCreateAttempts(dto, req.user);
   }
 
   @ApiOperation({ summary: 'Get a phishing attempt by ID' })
   @UseGuards(JwtAuthGuard)
   @Get(':id')
-  async getAttemptById(
-    @Param('id') id: string,
-    @Request() req: { user: { username: string } },
-  ) {
-    return this.attemptsService.getAttemptById(id, req.user.username);
+  async getAttemptById(@Param('id') id: string, @Request() req: { user: UserCtx }) {
+    return this.attemptsService.getAttemptById(id, req.user);
   }
 
   @ApiOperation({ summary: 'Bulk delete attempts by IDs' })
-  @ApiResponse({ status: 200, description: '{ deleted: number }' })
   @UseGuards(JwtAuthGuard)
   @Delete('bulk')
-  async bulkDeleteAttempts(
-    @Body() dto: BulkDeleteDto,
-    @Request() req: { user: { username: string } },
-  ) {
-    return this.attemptsService.bulkDeleteAttempts(dto.ids, req.user.username);
+  async bulkDeleteAttempts(@Body() dto: BulkDeleteDto, @Request() req: { user: UserCtx }) {
+    return this.attemptsService.bulkDeleteAttempts(dto.ids, req.user);
   }
 
   @ApiOperation({ summary: 'Delete a phishing attempt by ID' })
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
-  async deleteAttempt(
-    @Param('id') id: string,
-    @Request() req: { user: { username: string } },
-  ) {
-    return this.attemptsService.deleteAttempt(id, req.user.username);
+  async deleteAttempt(@Param('id') id: string, @Request() req: { user: UserCtx }) {
+    return this.attemptsService.deleteAttempt(id, req.user);
   }
 }

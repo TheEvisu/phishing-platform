@@ -4,8 +4,16 @@ import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 const mockAuthService = {
-  register: jest.fn(),
-  login: jest.fn(),
+  registerOrg: jest.fn(),
+  register:    jest.fn(),
+  login:       jest.fn(),
+};
+
+const mockRes = { cookie: jest.fn(), clearCookie: jest.fn() };
+
+const serviceResult = {
+  access_token: 'mock-token',
+  user: { id: 'u1', username: 'testuser', email: 'test@example.com', role: 'org_admin', organizationId: 'org-1', organizationName: 'Acme' },
 };
 
 describe('AuthController', () => {
@@ -24,39 +32,71 @@ describe('AuthController', () => {
     jest.clearAllMocks();
   });
 
-  describe('register', () => {
-    it('should call authService.register and return result', async () => {
-      const dto = { username: 'user1', email: 'user1@example.com', password: 'pass123' };
-      const expected = { access_token: 'token', user: { username: 'user1' } };
-      mockAuthService.register.mockResolvedValue(expected);
+  // ─── registerOrg ──────────────────────────────────────────────────────────
 
-      const result = await controller.register(dto);
+  describe('registerOrg', () => {
+    it('calls service.registerOrg, sets cookie, returns user', async () => {
+      mockAuthService.registerOrg.mockResolvedValue(serviceResult);
+      const dto = { organizationName: 'Acme', username: 'admin', email: 'admin@acme.com', password: 'Pass1!' };
+
+      const result = await controller.registerOrg(dto, mockRes as any);
+
+      expect(mockAuthService.registerOrg).toHaveBeenCalledWith(dto);
+      expect(mockRes.cookie).toHaveBeenCalledWith('access_token', 'mock-token', expect.any(Object));
+      expect(result).toEqual({ user: serviceResult.user });
+    });
+  });
+
+  // ─── register ─────────────────────────────────────────────────────────────
+
+  describe('register', () => {
+    it('calls service.register, sets cookie, returns user', async () => {
+      mockAuthService.register.mockResolvedValue(serviceResult);
+      const dto = { inviteCode: 'INV-ABCD1234', username: 'alice', email: 'alice@acme.com', password: 'Pass1!' };
+
+      const result = await controller.register(dto, mockRes as any);
 
       expect(mockAuthService.register).toHaveBeenCalledWith(dto);
-      expect(result).toEqual(expected);
+      expect(mockRes.cookie).toHaveBeenCalledWith('access_token', 'mock-token', expect.any(Object));
+      expect(result).toEqual({ user: serviceResult.user });
     });
   });
+
+  // ─── login ────────────────────────────────────────────────────────────────
 
   describe('login', () => {
-    it('should call authService.login and return result', async () => {
-      const dto = { username: 'user1', password: 'pass123' };
-      const expected = { access_token: 'token', user: { username: 'user1' } };
-      mockAuthService.login.mockResolvedValue(expected);
+    it('calls service.login, sets cookie, returns user', async () => {
+      mockAuthService.login.mockResolvedValue(serviceResult);
+      const dto = { username: 'testuser', password: 'Pass1!' };
 
-      const result = await controller.login(dto);
+      const result = await controller.login(dto, mockRes as any);
 
       expect(mockAuthService.login).toHaveBeenCalledWith(dto);
-      expect(result).toEqual(expected);
+      expect(mockRes.cookie).toHaveBeenCalledWith('access_token', 'mock-token', expect.any(Object));
+      expect(result).toEqual({ user: serviceResult.user });
     });
   });
 
+  // ─── getProfile ───────────────────────────────────────────────────────────
+
   describe('getProfile', () => {
-    it('should return user from request', () => {
-      const req = { user: { username: 'user1', email: 'user1@example.com', role: 'admin' } };
+    it('returns user from request', () => {
+      const req = { user: serviceResult.user };
 
       const result = controller.getProfile(req);
 
-      expect(result).toEqual(req.user);
+      expect(result).toEqual(serviceResult.user);
+    });
+  });
+
+  // ─── logout ───────────────────────────────────────────────────────────────
+
+  describe('logout', () => {
+    it('clears cookie and returns success message', () => {
+      const result = controller.logout(mockRes as any);
+
+      expect(mockRes.clearCookie).toHaveBeenCalledWith('access_token', expect.any(Object));
+      expect(result).toEqual({ message: 'Logged out' });
     });
   });
 });

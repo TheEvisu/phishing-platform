@@ -1,8 +1,14 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Template } from '../schemas/template.schema';
 import { CreateTemplateDto } from '../dto/template.dto';
+
+interface UserCtx {
+  username: string;
+  role: string;
+  organizationId: Types.ObjectId;
+}
 
 const DEFAULT_TEMPLATES: Omit<CreateTemplateDto, never>[] = [
   {
@@ -131,34 +137,37 @@ export class TemplatesService {
     private templateModel: Model<Template>,
   ) {}
 
-  async getAll(username: string) {
-    return this.templateModel.find({ createdBy: username }).sort({ createdAt: -1 }).exec();
+  async getAll(user: UserCtx) {
+    const f = user.role === 'org_admin'
+      ? { organizationId: user.organizationId }
+      : { organizationId: user.organizationId, createdBy: user.username };
+    return this.templateModel.find(f).sort({ createdAt: -1 }).exec();
   }
 
-  async create(dto: CreateTemplateDto, username: string) {
-    const template = new this.templateModel({ ...dto, createdBy: username });
+  async create(dto: CreateTemplateDto, user: UserCtx) {
+    const template = new this.templateModel({ ...dto, createdBy: user.username, organizationId: user.organizationId });
     await template.save();
     return template;
   }
 
-  async getById(id: string, username: string) {
-    const template = await this.templateModel.findById(id);
+  async getById(id: string, user: UserCtx) {
+    const template = await this.templateModel.findOne({ _id: id, organizationId: user.organizationId });
     if (!template) throw new NotFoundException('Template not found');
-    if (template.createdBy !== username) throw new ForbiddenException('Access denied');
+    if (user.role !== 'org_admin' && template.createdBy !== user.username) throw new ForbiddenException('Access denied');
     return template;
   }
 
-  async delete(id: string, username: string) {
-    const template = await this.templateModel.findById(id);
+  async delete(id: string, user: UserCtx) {
+    const template = await this.templateModel.findOne({ _id: id, organizationId: user.organizationId });
     if (!template) throw new NotFoundException('Template not found');
-    if (template.createdBy !== username) throw new ForbiddenException('Access denied');
+    if (user.role !== 'org_admin' && template.createdBy !== user.username) throw new ForbiddenException('Access denied');
     await this.templateModel.findByIdAndDelete(id);
     return { message: 'Template deleted successfully' };
   }
 
-  async seedDefaults(username: string) {
+  async seedDefaults(user: UserCtx) {
     const existing = await this.templateModel
-      .find({ createdBy: username })
+      .find({ organizationId: user.organizationId })
       .select('name')
       .lean()
       .exec();
@@ -167,7 +176,7 @@ export class TemplatesService {
     const created: Template[] = [];
     for (const t of DEFAULT_TEMPLATES) {
       if (existingNames.has(t.name)) continue;
-      const doc = new this.templateModel({ ...t, createdBy: username });
+      const doc = new this.templateModel({ ...t, createdBy: user.username, organizationId: user.organizationId });
       await doc.save();
       created.push(doc);
     }

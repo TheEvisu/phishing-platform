@@ -8,6 +8,7 @@ import { TerminusModule } from '@nestjs/terminus';
 import { AuthModule } from './auth/auth.module';
 import { AttemptsModule } from './attempts/attempts.module';
 import { TemplatesModule } from './templates/templates.module';
+import { OrganizationModule } from './organization/organization.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './health/health.controller';
@@ -31,6 +32,7 @@ import { createLoggerConfig } from '@app/shared';
     AuthModule,
     AttemptsModule,
     TemplatesModule,
+    OrganizationModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class Template extends Document {
@@ -17,6 +17,9 @@ export class Template extends Document {
 
   @Prop({ required: true })
   createdBy!: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'Organization', required: true })
+  organizationId!: Types.ObjectId;
 }
 
 export const TemplateSchema = SchemaFactory.createForClass(Template);

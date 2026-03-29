@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 import { AttemptStatus } from '@app/shared';
 
 @Schema({ timestamps: true })
@@ -24,9 +24,12 @@ export class PhishingAttempt extends Document {
 
   @Prop({ required: true })
   createdBy!: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'Organization', required: true })
+  organizationId!: Types.ObjectId;
 }
 
 export const PhishingAttemptSchema = SchemaFactory.createForClass(PhishingAttempt);
 
-// Optimises getAllAttempts: find({ createdBy }).sort({ createdAt: -1 }) + countDocuments({ createdBy })
-PhishingAttemptSchema.index({ createdBy: 1, createdAt: -1 });
+PhishingAttemptSchema.index({ organizationId: 1, createdAt: -1 });
+PhishingAttemptSchema.index({ organizationId: 1, createdBy: 1, createdAt: -1 });

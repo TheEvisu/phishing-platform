@@ -1,35 +1,49 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Types } from 'mongoose';
 import axios from 'axios';
 import { AttemptsService } from './attempts.service';
 import { PhishingAttempt } from '../schemas/phishing-attempt.schema';
+import { AttemptStatus } from '@app/shared';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
+
+const ORG_ID = new Types.ObjectId('aaaaaaaaaaaaaaaaaaaaaaaa');
+
+const adminUser = { username: 'admin', role: 'org_admin', organizationId: ORG_ID };
+const memberUser = { username: 'member', role: 'member', organizationId: ORG_ID };
 
 const mockAttempt = {
   _id: 'attempt-id-1',
   email: 'target@example.com',
   subject: 'Test Subject',
   content: 'Test Content',
-  status: 'sent',
+  status: AttemptStatus.SENT,
   attemptId: 'uuid-1234',
-  createdBy: 'testuser',
+  createdBy: 'member',
+  organizationId: ORG_ID,
   save: jest.fn(),
 };
 
+// ─── Model mocks ─────────────────────────────────────────────────────────────
+
 const mockAttemptModel = {
   find: jest.fn(),
-  findById: jest.fn(),
+  findOne: jest.fn(),
   findByIdAndDelete: jest.fn(),
   countDocuments: jest.fn(),
+  deleteMany: jest.fn(),
+  aggregate: jest.fn(),
 };
 
 function MockAttemptModelConstructor(dto: any) {
   return { ...mockAttempt, ...dto, save: jest.fn().mockResolvedValue(undefined) };
 }
 Object.assign(MockAttemptModelConstructor, mockAttemptModel);
+
+// ─── Suite ────────────────────────────────────────────────────────────────────
 
 describe('AttemptsService', () => {
   let service: AttemptsService;
@@ -46,47 +60,75 @@ describe('AttemptsService', () => {
     jest.clearAllMocks();
   });
 
+  // ─── getAllAttempts ────────────────────────────────────────────────────────
+
   describe('getAllAttempts', () => {
-    it('should return paginated attempts filtered by username', async () => {
-      const execMock = jest.fn().mockResolvedValue([mockAttempt]);
-      const limitMock = jest.fn().mockReturnValue({ exec: execMock });
-      const skipMock = jest.fn().mockReturnValue({ limit: limitMock });
-      const sortMock = jest.fn().mockReturnValue({ skip: skipMock });
-      mockAttemptModel.find.mockReturnValue({ sort: sortMock });
-      mockAttemptModel.countDocuments.mockResolvedValue(1);
+    function setupFind(results: any[]) {
+      const exec  = jest.fn().mockResolvedValue(results);
+      const limit = jest.fn().mockReturnValue({ exec });
+      const skip  = jest.fn().mockReturnValue({ limit });
+      const sort  = jest.fn().mockReturnValue({ skip });
+      mockAttemptModel.find.mockReturnValue({ sort });
+      mockAttemptModel.countDocuments.mockResolvedValue(results.length);
+    }
 
-      const result = await service.getAllAttempts('testuser', 1, 10);
+    it('admin filter includes only organizationId', async () => {
+      setupFind([mockAttempt]);
 
-      expect(mockAttemptModel.find).toHaveBeenCalledWith({ createdBy: 'testuser' });
-      expect(sortMock).toHaveBeenCalledWith({ createdAt: -1 });
-      expect(skipMock).toHaveBeenCalledWith(0);
-      expect(limitMock).toHaveBeenCalledWith(10);
-      expect(mockAttemptModel.countDocuments).toHaveBeenCalledWith({ createdBy: 'testuser' });
-      expect(result).toEqual({ data: [mockAttempt], total: 1, page: 1, limit: 10, totalPages: 1 });
+      await service.getAllAttempts(adminUser, 1, 10);
+
+      expect(mockAttemptModel.find).toHaveBeenCalledWith(
+        expect.not.objectContaining({ createdBy: expect.anything() }),
+      );
+      expect(mockAttemptModel.find).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: ORG_ID }),
+      );
     });
 
-    it('should calculate skip correctly for page 2', async () => {
-      const execMock = jest.fn().mockResolvedValue([]);
-      const limitMock = jest.fn().mockReturnValue({ exec: execMock });
-      const skipMock = jest.fn().mockReturnValue({ limit: limitMock });
-      const sortMock = jest.fn().mockReturnValue({ skip: skipMock });
-      mockAttemptModel.find.mockReturnValue({ sort: sortMock });
+    it('member filter includes organizationId + createdBy', async () => {
+      setupFind([mockAttempt]);
+
+      await service.getAllAttempts(memberUser, 1, 10);
+
+      expect(mockAttemptModel.find).toHaveBeenCalledWith(
+        expect.objectContaining({ organizationId: ORG_ID, createdBy: 'member' }),
+      );
+    });
+
+    it('calculates skip and totalPages correctly for page 2', async () => {
+      const exec  = jest.fn().mockResolvedValue([]);
+      const limit = jest.fn().mockReturnValue({ exec });
+      const skip  = jest.fn().mockReturnValue({ limit });
+      const sort  = jest.fn().mockReturnValue({ skip });
+      mockAttemptModel.find.mockReturnValue({ sort });
       mockAttemptModel.countDocuments.mockResolvedValue(15);
 
-      const result = await service.getAllAttempts('testuser', 2, 10);
+      const result = await service.getAllAttempts(adminUser, 2, 10);
 
-      expect(skipMock).toHaveBeenCalledWith(10);
+      expect(skip).toHaveBeenCalledWith(10);
       expect(result.totalPages).toBe(2);
+    });
+
+    it('applies status filter when provided', async () => {
+      setupFind([]);
+
+      await service.getAllAttempts(adminUser, 1, 10, AttemptStatus.SENT);
+
+      expect(mockAttemptModel.find).toHaveBeenCalledWith(
+        expect.objectContaining({ status: AttemptStatus.SENT }),
+      );
     });
   });
 
+  // ─── createAttempt ────────────────────────────────────────────────────────
+
   describe('createAttempt', () => {
-    it('should create attempt and call simulation service', async () => {
+    it('saves attempt and calls simulation service', async () => {
       mockedAxios.post.mockResolvedValue({ data: {} });
 
       const result = await service.createAttempt(
         { email: 'target@example.com', subject: 'Subj', content: 'Body' },
-        'testuser',
+        memberUser,
       );
 
       expect(mockedAxios.post).toHaveBeenCalledWith(
@@ -97,68 +139,98 @@ describe('AttemptsService', () => {
       expect(result).toBeDefined();
     });
 
-    it('should set status to failed and rethrow if simulation service fails', async () => {
+    it('sets status to failed and rethrows if simulation service fails', async () => {
       mockedAxios.post.mockRejectedValue(new Error('Service unavailable'));
 
       await expect(
         service.createAttempt(
           { email: 'target@example.com', subject: 'Subj', content: 'Body' },
-          'testuser',
+          memberUser,
         ),
       ).rejects.toThrow('Service unavailable');
     });
   });
 
-  describe('getAttemptById', () => {
-    it('should return attempt if owned by user', async () => {
-      mockAttemptModel.findById.mockResolvedValue(mockAttempt);
+  // ─── getAttemptById ───────────────────────────────────────────────────────
 
-      const result = await service.getAttemptById('attempt-id-1', 'testuser');
+  describe('getAttemptById', () => {
+    it('returns attempt when found within user scope', async () => {
+      mockAttemptModel.findOne.mockResolvedValue(mockAttempt);
+
+      const result = await service.getAttemptById('attempt-id-1', memberUser);
 
       expect(result).toEqual(mockAttempt);
     });
 
-    it('should throw NotFoundException if not found', async () => {
-      mockAttemptModel.findById.mockResolvedValue(null);
+    it('throws NotFoundException when findOne returns null', async () => {
+      mockAttemptModel.findOne.mockResolvedValue(null);
 
-      await expect(service.getAttemptById('nonexistent', 'testuser')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('should throw ForbiddenException if attempt belongs to another user', async () => {
-      mockAttemptModel.findById.mockResolvedValue(mockAttempt);
-
-      await expect(service.getAttemptById('attempt-id-1', 'otheruser')).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(service.getAttemptById('nonexistent', memberUser)).rejects.toThrow(NotFoundException);
     });
   });
 
+  // ─── deleteAttempt ────────────────────────────────────────────────────────
+
   describe('deleteAttempt', () => {
-    it('should delete attempt if owned by user', async () => {
-      mockAttemptModel.findById.mockResolvedValue(mockAttempt);
+    it('deletes attempt when found within user scope', async () => {
+      mockAttemptModel.findOne.mockResolvedValue(mockAttempt);
       mockAttemptModel.findByIdAndDelete.mockResolvedValue(mockAttempt);
 
-      const result = await service.deleteAttempt('attempt-id-1', 'testuser');
+      const result = await service.deleteAttempt('attempt-id-1', memberUser);
 
+      expect(mockAttemptModel.findByIdAndDelete).toHaveBeenCalledWith('attempt-id-1');
       expect(result).toEqual({ message: 'Phishing attempt deleted successfully' });
     });
 
-    it('should throw NotFoundException if attempt does not exist', async () => {
-      mockAttemptModel.findById.mockResolvedValue(null);
+    it('throws ForbiddenException when attempt not in user scope', async () => {
+      mockAttemptModel.findOne.mockResolvedValue(null);
 
-      await expect(service.deleteAttempt('nonexistent', 'testuser')).rejects.toThrow(
-        NotFoundException,
+      await expect(service.deleteAttempt('attempt-id-1', memberUser)).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  // ─── bulkDeleteAttempts ───────────────────────────────────────────────────
+
+  describe('bulkDeleteAttempts', () => {
+    it('calls deleteMany scoped to user org', async () => {
+      mockAttemptModel.deleteMany.mockResolvedValue({ deletedCount: 2 });
+
+      const result = await service.bulkDeleteAttempts(['id-1', 'id-2'], adminUser);
+
+      expect(mockAttemptModel.deleteMany).toHaveBeenCalledWith(
+        expect.objectContaining({ _id: { $in: ['id-1', 'id-2'] }, organizationId: ORG_ID }),
       );
+      expect(result).toEqual({ deleted: 2 });
+    });
+  });
+
+  // ─── getStats ─────────────────────────────────────────────────────────────
+
+  describe('getStats', () => {
+    it('returns click rate of 0 when no sent or clicked', async () => {
+      mockAttemptModel.countDocuments
+        .mockResolvedValueOnce(5)   // total
+        .mockResolvedValueOnce(0)   // sent
+        .mockResolvedValueOnce(0)   // clicked
+        .mockResolvedValueOnce(5);  // failed
+
+      const result = await service.getStats(adminUser);
+
+      expect(result.clickRate).toBe(0);
+      expect(result.total).toBe(5);
     });
 
-    it('should throw ForbiddenException if attempt belongs to another user', async () => {
-      mockAttemptModel.findById.mockResolvedValue(mockAttempt);
+    it('computes click rate correctly', async () => {
+      mockAttemptModel.countDocuments
+        .mockResolvedValueOnce(10)  // total
+        .mockResolvedValueOnce(6)   // sent
+        .mockResolvedValueOnce(4)   // clicked
+        .mockResolvedValueOnce(0);  // failed
 
-      await expect(service.deleteAttempt('attempt-id-1', 'otheruser')).rejects.toThrow(
-        ForbiddenException,
-      );
+      const result = await service.getStats(adminUser);
+
+      // 4 / (6+4) = 40%
+      expect(result.clickRate).toBe(40);
     });
   });
 });

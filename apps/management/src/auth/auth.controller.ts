@@ -11,7 +11,7 @@ import { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto } from '../dto/auth.dto';
+import { RegisterOrgDto, RegisterDto, LoginDto } from '../dto/auth.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 const COOKIE_OPTIONS = {
@@ -26,17 +26,30 @@ const COOKIE_OPTIONS = {
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @ApiOperation({ summary: 'Register a new user' })
+  @ApiOperation({ summary: 'Register a new organization + admin account' })
+  @ApiResponse({ status: 201, description: 'Organization created, access_token set as httpOnly cookie.' })
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('register-org')
+  async registerOrg(
+    @Body() dto: RegisterOrgDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.registerOrg(dto);
+    res.cookie('access_token', result.access_token, COOKIE_OPTIONS);
+    return { user: result.user };
+  }
+
+  @ApiOperation({ summary: 'Register as a member via invite code' })
   @ApiResponse({ status: 201, description: 'User registered, access_token set as httpOnly cookie.' })
-  @ApiResponse({ status: 400, description: 'Validation error.' })
+  @ApiResponse({ status: 404, description: 'Invalid invite code.' })
   @ApiResponse({ status: 409, description: 'Username or email already taken.' })
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('register')
   async register(
-    @Body() registerDto: RegisterDto,
+    @Body() dto: RegisterDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.authService.register(registerDto);
+    const result = await this.authService.register(dto);
     res.cookie('access_token', result.access_token, COOKIE_OPTIONS);
     return { user: result.user };
   }

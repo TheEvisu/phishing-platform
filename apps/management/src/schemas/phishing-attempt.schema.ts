@@ -30,6 +30,9 @@ export class PhishingAttempt extends Document {
 
   @Prop({ type: Types.ObjectId, ref: 'Campaign' })
   campaignId?: Types.ObjectId;
+
+  @Prop()
+  trainingViewedAt?: Date;
 }
 
 export const PhishingAttemptSchema = SchemaFactory.createForClass(PhishingAttempt);

@@ -38,14 +38,14 @@ describe('PhishingController', () => {
   });
 
   describe('trackClick', () => {
-    it('should call service and send HTML response', async () => {
+    it('should call service and redirect to training page', async () => {
       mockPhishingService.trackClick.mockResolvedValue({});
-      const res = { send: jest.fn() } as any;
+      const res = { redirect: jest.fn() } as any;
 
       await controller.trackClick('uuid-1', res);
 
       expect(mockPhishingService.trackClick).toHaveBeenCalledWith('uuid-1');
-      expect(res.send).toHaveBeenCalledWith(expect.stringContaining('Phishing Test Alert'));
+      expect(res.redirect).toHaveBeenCalledWith(302, expect.stringContaining('uuid-1'));
     });
   });
 });

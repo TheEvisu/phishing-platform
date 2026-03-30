@@ -11,6 +11,7 @@ import { TemplatesModule } from './templates/templates.module';
 import { OrganizationModule } from './organization/organization.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { RecipientsModule } from './recipients/recipients.module';
+import { TrainingModule } from './training/training.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './health/health.controller';
@@ -37,6 +38,7 @@ import { createLoggerConfig } from '@app/shared';
     OrganizationModule,
     CampaignsModule,
     RecipientsModule,
+    TrainingModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

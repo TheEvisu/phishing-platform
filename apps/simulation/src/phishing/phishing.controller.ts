@@ -29,16 +29,7 @@ export class PhishingController {
     @Res() res: Response,
   ) {
     await this.phishingService.trackClick(attemptId);
-
-    res.send(`
-      <html>
-        <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-          <h2>⚠️ Phishing Test Alert!</h2>
-          <p>You clicked on a phishing simulation link.</p>
-          <p>In a real attack, this could have been dangerous!</p>
-          <p>Remember to always verify email sources before clicking links.</p>
-        </body>
-      </html>
-    `);
+    const trainingUrl = `${process.env.TRAINING_BASE_URL || 'http://localhost:5173/training'}/${attemptId}`;
+    res.redirect(302, trainingUrl);
   }
 }

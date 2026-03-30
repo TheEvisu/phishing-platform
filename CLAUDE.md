@@ -128,6 +128,16 @@ Endpoints (all under `JwtAuthGuard`):
 
 `POST /campaigns/launch` creates a `Campaign` document and sends all emails concurrently. `GET /campaigns` returns each campaign with aggregated stats (`sent`, `clicked`, `failed`, `clickRate`) computed via MongoDB `$group` pipeline. `GET /campaigns/:id` returns the campaign plus all its attempts.
 
+### Training after click
+
+When a recipient clicks a phishing link, the Simulation service records the click and redirects them (HTTP 302) to `{TRAINING_BASE_URL}/{attemptId}` (env var, default `http://localhost:5173/training`). The frontend serves a public `/training/:attemptId` page with phishing awareness educational content.
+
+Management exposes two **public** endpoints (no auth — the UUID acts as a capability token):
+- `GET /training/:attemptId` → `{ found, alreadyViewed, viewedAt? }` — used by the training page to show completion state
+- `POST /training/:attemptId/viewed` → sets `trainingViewedAt` on the attempt document
+
+`PhishingAttempt` schema now has an optional `trainingViewedAt?: Date` field. Silent no-op if the attemptId is unknown (don't leak existence).
+
 ### Attempt lifecycle
 
 ```

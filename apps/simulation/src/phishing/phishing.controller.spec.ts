@@ -38,14 +38,15 @@ describe('PhishingController', () => {
   });
 
   describe('trackClick', () => {
-    it('should call service and redirect to training page', async () => {
-      mockPhishingService.trackClick.mockResolvedValue({});
-      const res = { redirect: jest.fn() } as any;
+    it('should call service with request and serve intermediate page', async () => {
+      mockPhishingService.trackClick.mockResolvedValue({ metadata: {} });
+      const req = { headers: {}, ip: '1.2.3.4' } as any;
+      const res = { setHeader: jest.fn(), send: jest.fn() } as any;
 
-      await controller.trackClick('uuid-1', res);
+      await controller.trackClick('uuid-1', req, res);
 
-      expect(mockPhishingService.trackClick).toHaveBeenCalledWith('uuid-1');
-      expect(res.redirect).toHaveBeenCalledWith(302, expect.stringContaining('uuid-1'));
+      expect(mockPhishingService.trackClick).toHaveBeenCalledWith('uuid-1', req);
+      expect(res.send).toHaveBeenCalledWith(expect.stringContaining('uuid-1'));
     });
   });
 });

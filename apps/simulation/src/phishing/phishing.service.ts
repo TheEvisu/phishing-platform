@@ -3,9 +3,77 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as nodemailer from 'nodemailer';
 import axios from 'axios';
+import { UAParser } from 'ua-parser-js';
+import { Request } from 'express';
 import { PhishingAttempt } from '../schemas/phishing-attempt.schema';
 import { SendPhishingDto, SmtpPayloadDto } from '../dto/send-phishing.dto';
+import { ClickBeaconDto } from '../dto/click-beacon.dto';
 import { AttemptStatus } from '@app/shared';
+
+// ─── Click metadata types ─────────────────────────────────────────────────────
+
+export interface ClickMetadata {
+  // Server-side (always available)
+  ip?: string;
+  userAgent?: string;
+  browser?: string;
+  browserVersion?: string;
+  os?: string;
+  osVersion?: string;
+  deviceType?: string;        // 'mobile' | 'tablet' | 'desktop'
+  language?: string;          // from Accept-Language
+  referer?: string;           // cleaned (no query params)
+  // Client-side (from JS beacon)
+  screenResolution?: string;
+  viewportSize?: string;
+  timezone?: string;
+  platform?: string;
+  cpuCores?: number;
+  colorDepth?: number;
+  touchSupport?: boolean;
+  doNotTrack?: boolean;
+  languages?: string;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function extractIp(req: Request): string | undefined {
+  const fwd = req.headers['x-forwarded-for'];
+  if (fwd) {
+    const first = (Array.isArray(fwd) ? fwd[0] : fwd).split(',')[0];
+    return first.trim();
+  }
+  return req.ip ?? (req.socket as { remoteAddress?: string })?.remoteAddress;
+}
+
+function extractLanguage(header?: string): string | undefined {
+  if (!header) return undefined;
+  // "en-US,en;q=0.9,ru;q=0.8" → "en-US"
+  return header.split(',')[0]?.split(';')[0]?.trim();
+}
+
+function cleanReferer(ref?: string): string | undefined {
+  if (!ref) return undefined;
+  try {
+    const url = new URL(ref);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseUserAgent(ua: string): Pick<ClickMetadata, 'browser' | 'browserVersion' | 'os' | 'osVersion' | 'deviceType'> {
+  const result = new UAParser(ua).getResult();
+  return {
+    browser:        result.browser.name,
+    browserVersion: result.browser.version,
+    os:             result.os.name,
+    osVersion:      result.os.version,
+    deviceType:     result.device.type ?? 'desktop',
+  };
+}
+
+// ─── Service ──────────────────────────────────────────────────────────────────
 
 @Injectable()
 export class PhishingService {
@@ -17,8 +85,8 @@ export class PhishingService {
     private phishingAttemptModel: Model<PhishingAttempt>,
   ) {
     this.fallbackTransporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.SMTP_PORT || '587'),
+      host:   process.env.SMTP_HOST || 'smtp.gmail.com',
+      port:   parseInt(process.env.SMTP_PORT || '587'),
       secure: false,
       auth: {
         user: process.env.SMTP_USER,
@@ -29,8 +97,8 @@ export class PhishingService {
 
   private buildTransporter(smtp: SmtpPayloadDto): nodemailer.Transporter {
     return nodemailer.createTransport({
-      host: smtp.host,
-      port: smtp.port,
+      host:   smtp.host,
+      port:   smtp.port,
       secure: smtp.secure,
       auth: { user: smtp.user, pass: smtp.password },
     });
@@ -42,6 +110,8 @@ export class PhishingService {
       ? `"${smtp.fromName}" <${smtp.fromAddress}>`
       : smtp.fromAddress;
   }
+
+  // ─── Send email ─────────────────────────────────────────────────────────────
 
   async sendPhishingEmail(sendPhishingDto: SendPhishingDto) {
     const { recipientEmail, subject, content, attemptId, smtp } = sendPhishingDto;
@@ -61,10 +131,10 @@ export class PhishingService {
       );
 
       await transporter.sendMail({
-        from: this.buildFromAddress(smtp),
-        to: recipientEmail,
+        from:    this.buildFromAddress(smtp),
+        to:      recipientEmail,
         subject,
-        html: emailContent,
+        html:    emailContent,
       });
 
       await phishingAttempt.save();
@@ -78,29 +148,96 @@ export class PhishingService {
     }
   }
 
-  async trackClick(attemptId: string) {
-    const clickedAt = new Date();
+  // ─── Track click — extract server-side data immediately ───────────────────
 
-    const attempt = await this.phishingAttemptModel.findOneAndUpdate(
+  async trackClick(attemptId: string, req: Request): Promise<{ metadata: ClickMetadata }> {
+    const clickedAt  = new Date();
+    const userAgent  = req.headers['user-agent'] ?? '';
+    const parsedUa   = parseUserAgent(userAgent);
+
+    const metadata: ClickMetadata = {
+      ip:             extractIp(req),
+      userAgent,
+      language:       extractLanguage(req.headers['accept-language']),
+      referer:        cleanReferer(req.headers['referer'] as string | undefined),
+      ...parsedUa,
+    };
+
+    await this.phishingAttemptModel.findOneAndUpdate(
       { attemptId },
-      { status: AttemptStatus.CLICKED, clickedAt },
+      { status: AttemptStatus.CLICKED, clickedAt, clickMetadata: metadata },
       { new: true },
     );
 
-    this.notifyManagement(attemptId, AttemptStatus.CLICKED, clickedAt).catch((err) => {
+    // Notify management immediately with server-side data
+    this.notifyManagement(attemptId, AttemptStatus.CLICKED, clickedAt, metadata).catch((err) => {
       this.logger.warn(`Failed to notify management of click for ${attemptId}: ${err?.message}`);
     });
 
-    return attempt;
+    return { metadata };
   }
 
-  private async notifyManagement(attemptId: string, status: AttemptStatus, clickedAt?: Date) {
+  // ─── Beacon — merge client-side data ──────────────────────────────────────
+
+  async mergeBeaconData(attemptId: string, dto: ClickBeaconDto): Promise<void> {
+    const clientData: Partial<ClickMetadata> = {
+      screenResolution: dto.screenResolution,
+      viewportSize:     dto.viewportSize,
+      timezone:         dto.timezone,
+      language:         dto.language ?? undefined,
+      languages:        dto.languages,
+      platform:         dto.platform,
+      cpuCores:         dto.cpuCores,
+      colorDepth:       dto.colorDepth,
+      touchSupport:     dto.touchSupport,
+      doNotTrack:       dto.doNotTrack,
+    };
+
+    // Remove undefined keys
+    (Object.keys(clientData) as (keyof ClickMetadata)[]).forEach((k) => {
+      if (clientData[k] === undefined) delete clientData[k];
+    });
+
+    const attempt = await this.phishingAttemptModel
+      .findOneAndUpdate(
+        { attemptId },
+        { $set: Object.fromEntries(Object.entries(clientData).map(([k, v]) => [`clickMetadata.${k}`, v])) },
+        { new: true },
+      )
+      .lean()
+      .exec();
+
+    if (attempt?.clickMetadata) {
+      // Re-notify management with the complete merged metadata
+      this.notifyManagement(
+        attemptId,
+        AttemptStatus.CLICKED,
+        attempt.clickedAt,
+        attempt.clickMetadata as ClickMetadata,
+      ).catch((err) => {
+        this.logger.warn(`Failed to sync beacon data to management for ${attemptId}: ${err?.message}`);
+      });
+    }
+  }
+
+  // ─── Internal: notify management service ──────────────────────────────────
+
+  private async notifyManagement(
+    attemptId: string,
+    status: AttemptStatus,
+    clickedAt?: Date,
+    clickMetadata?: ClickMetadata,
+  ) {
     const managementUrl = process.env.MANAGEMENT_URL || 'http://localhost:3001';
-    const secret = process.env.INTERNAL_SECRET;
+    const secret        = process.env.INTERNAL_SECRET;
 
     await axios.patch(
       `${managementUrl}/attempts/internal/${attemptId}/status`,
-      { status, clickedAt: clickedAt?.toISOString() },
+      {
+        status,
+        clickedAt:     clickedAt?.toISOString(),
+        clickMetadata: clickMetadata ?? undefined,
+      },
       {
         timeout: 3_000,
         headers: secret ? { 'x-service-key': secret } : {},

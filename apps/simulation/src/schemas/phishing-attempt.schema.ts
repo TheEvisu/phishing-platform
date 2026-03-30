@@ -16,6 +16,9 @@ export class PhishingAttempt extends Document {
 
   @Prop()
   clickedAt?: Date;
+
+  @Prop({ type: Object })
+  clickMetadata?: Record<string, unknown>;
 }
 
 export const PhishingAttemptSchema = SchemaFactory.createForClass(PhishingAttempt);

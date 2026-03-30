@@ -1,4 +1,4 @@
-import { IsEmail, IsString, IsNotEmpty, MaxLength, IsArray, ArrayMinSize, ArrayMaxSize, IsIn, IsOptional, IsDateString, IsMongoId } from 'class-validator';
+import { IsEmail, IsString, IsNotEmpty, MaxLength, IsArray, ArrayMinSize, ArrayMaxSize, IsIn, IsOptional, IsDateString, IsMongoId, IsObject } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { AttemptStatus } from '@app/shared';
 
@@ -72,4 +72,9 @@ export class UpdateAttemptStatusDto {
   @IsOptional()
   @IsDateString()
   clickedAt?: string;
+
+  @ApiProperty({ required: false, description: 'Click fingerprint data from Simulation service' })
+  @IsOptional()
+  @IsObject()
+  clickMetadata?: Record<string, unknown>;
 }

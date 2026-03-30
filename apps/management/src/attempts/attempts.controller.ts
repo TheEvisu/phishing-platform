@@ -34,7 +34,7 @@ export class AttemptsController {
   @UseGuards(InternalGuard)
   @Patch('internal/:attemptId/status')
   async updateStatus(@Param('attemptId') attemptId: string, @Body() dto: UpdateAttemptStatusDto) {
-    return this.attemptsService.updateAttemptStatus(attemptId, dto.status, dto.clickedAt);
+    return this.attemptsService.updateAttemptStatus(attemptId, dto.status, dto.clickedAt, dto.clickMetadata);
   }
 
   @ApiOperation({ summary: 'List phishing attempts (paginated, filterable)' })

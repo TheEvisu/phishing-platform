@@ -72,12 +72,18 @@ export class AttemptsService {
 
   // ─── Internal (called by Simulation service) ───────────────────────────────
 
-  async updateAttemptStatus(attemptId: string, status: AttemptStatus, clickedAt?: string) {
-    const update: Partial<PhishingAttempt> = { status };
-    if (clickedAt) update.clickedAt = new Date(clickedAt);
+  async updateAttemptStatus(
+    attemptId: string,
+    status: AttemptStatus,
+    clickedAt?: string,
+    clickMetadata?: Record<string, unknown>,
+  ) {
+    const $set: Record<string, unknown> = { status };
+    if (clickedAt)     $set.clickedAt     = new Date(clickedAt);
+    if (clickMetadata) $set.clickMetadata = clickMetadata;
 
     const attempt = await this.phishingAttemptModel.findOneAndUpdate(
-      { attemptId }, update, { new: true },
+      { attemptId }, { $set }, { new: true },
     );
 
     if (attempt) {
@@ -86,7 +92,7 @@ export class AttemptsService {
         organizationId: attempt.organizationId.toString(),
         createdBy: attempt.createdBy,
         email: attempt.email,
-        clickedAt: update.clickedAt,
+        clickedAt: clickedAt ? new Date(clickedAt) : undefined,
       });
     }
 

@@ -106,6 +106,24 @@ If no SMTP is configured for an org, Simulation falls back to its own env vars (
 
 Bulk operations return per-email results: `{ sent, failed, total, results: [{ email, success, attemptId, error? }] }`.
 
+### Recipients
+
+`Recipient` schema stores `email` (unique per org, lowercased), `firstName`, `lastName`, `department?`, `tags?[]`, `organizationId`, `createdBy`.
+
+Indexes: `{ organizationId, email }` unique, `{ organizationId, department }`, `{ organizationId, createdAt: -1 }`.
+
+Endpoints (all under `JwtAuthGuard`):
+- `POST /recipients` — create one (org_admin only, ConflictException on duplicate email)
+- `POST /recipients/import` — bulk upsert by email via `bulkWrite` (idempotent, returns `{ created, updated, total }`)
+- `POST /recipients/bulk-delete` — delete many by IDs (org_admin only)
+- `GET /recipients` — paginated list with `search` (regex on email/firstName/lastName) and `department` filter
+- `GET /recipients/departments` — distinct non-empty department values, sorted
+- `GET /recipients/:id` — single record, 404 if wrong org
+- `PATCH /recipients/:id` — update, checks email uniqueness (org_admin only)
+- `DELETE /recipients/:id` — single delete (org_admin only)
+
+`requireAdmin(user)` helper throws ForbiddenException for non-admins. All queries are scoped by `organizationId` — members can read, only admins can mutate.
+
 ### Campaigns
 
 `POST /campaigns/launch` creates a `Campaign` document and sends all emails concurrently. `GET /campaigns` returns each campaign with aggregated stats (`sent`, `clicked`, `failed`, `clickRate`) computed via MongoDB `$group` pipeline. `GET /campaigns/:id` returns the campaign plus all its attempts.

@@ -7,6 +7,7 @@ import { Campaign } from '../schemas/campaign.schema';
 import { PhishingAttempt } from '../schemas/phishing-attempt.schema';
 import { LaunchCampaignDto } from '../dto/campaign.dto';
 import { AttemptStatus } from '@app/shared';
+import { OrganizationService } from '../organization/organization.service';
 
 export interface EmailResult {
   email: string;
@@ -26,6 +27,7 @@ export class CampaignsService {
   constructor(
     @InjectModel(Campaign.name) private campaignModel: Model<Campaign>,
     @InjectModel(PhishingAttempt.name) private attemptModel: Model<PhishingAttempt>,
+    private orgService: OrganizationService,
   ) {}
 
   private buildFilter(user: UserCtx) {
@@ -45,6 +47,7 @@ export class CampaignsService {
     await campaign.save();
 
     const simulationUrl = process.env.PHISHING_SIMULATION_URL || 'http://localhost:3000';
+    const smtp = await this.orgService.getSmtpForSend(user.organizationId);
 
     const results = await Promise.all(
       dto.emails.map(async (email): Promise<EmailResult> => {
@@ -60,7 +63,7 @@ export class CampaignsService {
         try {
           await axios.post(
             `${simulationUrl}/phishing/send`,
-            { recipientEmail: email, subject: dto.subject, content: dto.content, attemptId },
+            { recipientEmail: email, subject: dto.subject, content: dto.content, attemptId, smtp },
             { timeout: 5_000 },
           );
           return { email, success: true, attemptId };

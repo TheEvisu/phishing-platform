@@ -45,7 +45,7 @@ npx tsc -p apps/simulation/tsconfig.app.json --noEmit
 ### Monorepo layout
 
 ```
-apps/management/   # Port 3001 — auth, organizations, attempts CRUD + bulk + stats, templates CRUD + seed
+apps/management/   # Port 3001 — auth, organizations, attempts CRUD + bulk + stats, templates CRUD + seed, campaigns
 apps/simulation/   # Port 3000 — email sending via Nodemailer, click tracking
 libs/shared/       # AttemptStatus enum (pending|sent|clicked|failed), Winston logger config
 ```
@@ -59,7 +59,9 @@ Every user belongs to exactly one `Organization`. Registration has two paths:
 - `POST /auth/register-org` — creates an `Organization` + first user with role `org_admin`. Generates a random invite code (`INV-XXXXXXXX` via `crypto.randomBytes`).
 - `POST /auth/register` — requires a valid `inviteCode`, creates a user with role `member` linked to that org.
 
-The `Organization` schema (`schemas/organization.schema.ts`) stores `name`, `slug` (unique), and `inviteCode` (unique). Admins can regenerate the invite code via `POST /organizations/invite/regenerate` — the old code is immediately invalidated.
+The `Organization` schema (`schemas/organization.schema.ts`) stores `name`, `slug` (unique), `inviteCode` (unique), and `smtpConfig` (optional, see below).
+
+Admins can regenerate the invite code via `POST /organizations/invite/regenerate` — the old code is immediately invalidated.
 
 ### UserCtx and data isolation
 
@@ -77,15 +79,36 @@ interface UserCtx {
 - `org_admin` → `{ organizationId }` — sees all org data
 - `member` → `{ organizationId, createdBy }` — sees only own data
 
-The same pattern applies in `TemplatesService`.
+The same pattern applies in `TemplatesService` and `CampaignsService`.
 
 ### Auth
 
 JWT payload includes `username`, `sub`, `organizationId`, and `role`. Token is stored in an **httpOnly cookie** (`access_token`), not returned in the response body. `cookie-parser` middleware is registered in `main.ts`. `JwtStrategy` extracts the token from `req.cookies.access_token`. `COOKIE_OPTIONS` in `auth.controller.ts` sets `httpOnly: true`, `sameSite: 'strict'`, `secure: true` in production.
 
+`JwtStrategy.validate()` returns `null` (→ 401) if the user has no `organizationId` — guards against pre-migration users and prevents `find({ organizationId: undefined })` from leaking cross-org data.
+
+### Per-org SMTP configuration
+
+Each organization configures its own outgoing mail server via `PUT /organizations/smtp`. The SMTP password is encrypted at rest using **AES-256-GCM** (`common/crypto.util.ts`). The encryption key is `SMTP_ENCRYPTION_KEY` from env (required in production, has a dev default).
+
+`OrganizationService.getSmtpForSend(orgId)` decrypts and returns the SMTP config. It is called by `AttemptsService` and `CampaignsService` before every simulation request — the decrypted config is passed in the payload so Simulation never touches the database.
+
+SMTP endpoints (org_admin only):
+- `GET /organizations/smtp` — returns config with `passwordSet: boolean`, never the actual password
+- `PUT /organizations/smtp` — saves config, encrypts password
+- `POST /organizations/smtp/test` — calls `nodemailer.verify()`, returns `{ success: true }` or throws `BadRequestException`
+
+If no SMTP is configured for an org, Simulation falls back to its own env vars (`SMTP_HOST`, `SMTP_PORT`, etc.).
+
 ### Management → Simulation communication
 
-`AttemptsService.createAttempt()` calls `POST /phishing/send` on the Simulation service via Axios with a 5 s timeout. The payload requires `recipientEmail`, `subject`, `content`, and `attemptId`. The `{{TRACKING_LINK}}` placeholder in `content` is replaced by the Simulation service with a real tracking URL before the email is sent.
+`AttemptsService.createAttempt()` and `CampaignsService.launch()` call `POST /phishing/send` on the Simulation service via Axios with a 5 s timeout. The payload includes `recipientEmail`, `subject`, `content`, `attemptId`, and an optional `smtp` object (decrypted org SMTP config). The `{{TRACKING_LINK}}` placeholder in `content` is replaced by the Simulation service with a real tracking URL before the email is sent.
+
+Bulk operations return per-email results: `{ sent, failed, total, results: [{ email, success, attemptId, error? }] }`.
+
+### Campaigns
+
+`POST /campaigns/launch` creates a `Campaign` document and sends all emails concurrently. `GET /campaigns` returns each campaign with aggregated stats (`sent`, `clicked`, `failed`, `clickRate`) computed via MongoDB `$group` pipeline. `GET /campaigns/:id` returns the campaign plus all its attempts.
 
 ### Attempt lifecycle
 
@@ -98,6 +121,12 @@ SMTP failure → status: failed
 Status updates are pushed to connected frontend clients via SSE (`GET /attempts/events`). The stream is scoped by `organizationId` and role — admins receive all org events, members only their own.
 
 Both services have their own MongoDB database. The Simulation DB tracks click events; the Management DB is the source of truth for attempt records.
+
+### Security
+
+- `InternalGuard` protects internal endpoints (e.g. `PATCH /attempts/internal/:id/status`). In production, requires `x-service-key` header matching `INTERNAL_SECRET`. Without the env var in production, the guard fails closed (denies all).
+- `SMTP_ENCRYPTION_KEY` must be 32+ characters. Required in production. Dev default provided.
+- `JwtStrategy` null-checks `organizationId` — prevents cross-org data leakage via MongoDB `find({ organizationId: undefined })`.
 
 ### Version middleware
 
@@ -113,6 +142,8 @@ Global `ValidationPipe` with `whitelist: true, forbidNonWhitelisted: true` in bo
 
 ### Tests
 
-Unit specs sit next to source files (`*.spec.ts`). E2e specs are in `apps/*/test/app.e2e-spec.ts`. All MongoDB and SMTP dependencies are mocked — no real database or SMTP server needed. The Jest config (`jest.config.js`) uses `moduleNameMapper` to resolve `@app/shared`.
+Unit specs sit next to source files (`*.spec.ts`). E2e specs are in `apps/*/test/app.e2e-spec.ts`. All MongoDB, SMTP, and nodemailer dependencies are mocked — no real database or SMTP server needed. The Jest config (`jest.config.js`) uses `moduleNameMapper` to resolve `@app/shared`.
 
-Covered service specs: `auth.service`, `attempts.service`, `templates.service`, `organization.service`.
+Covered service specs: `auth.service`, `attempts.service`, `templates.service`, `organization.service`, `jwt.strategy`.
+
+When adding tests for services that depend on `OrganizationService`, provide a mock: `{ provide: OrganizationService, useValue: { getSmtpForSend: jest.fn().mockResolvedValue(null) } }`.

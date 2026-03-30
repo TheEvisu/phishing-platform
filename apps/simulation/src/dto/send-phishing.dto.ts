@@ -1,5 +1,16 @@
-import { IsEmail, IsString, IsNotEmpty, MaxLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min, ValidateNested } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+
+export class SmtpPayloadDto {
+  @IsString() @IsNotEmpty() host!: string;
+  @IsInt() @Min(1) @Max(65535) @Type(() => Number) port!: number;
+  @IsBoolean() secure!: boolean;
+  @IsString() @IsNotEmpty() user!: string;
+  @IsString() @IsNotEmpty() password!: string;
+  @IsEmail() fromAddress!: string;
+  @IsOptional() @IsString() fromName?: string;
+}
 
 export class SendPhishingDto {
   @ApiProperty({ example: 'target@company.com', maxLength: 254 })
@@ -25,4 +36,10 @@ export class SendPhishingDto {
   @IsNotEmpty()
   @MaxLength(36)
   attemptId!: string;
+
+  @ApiProperty({ required: false, description: 'Per-org SMTP config. Falls back to env vars if omitted.' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SmtpPayloadDto)
+  smtp?: SmtpPayloadDto;
 }

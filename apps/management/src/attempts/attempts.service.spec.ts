@@ -6,6 +6,7 @@ import axios from 'axios';
 import { AttemptsService } from './attempts.service';
 import { PhishingAttempt } from '../schemas/phishing-attempt.schema';
 import { AttemptStatus } from '@app/shared';
+import { OrganizationService } from '../organization/organization.service';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -43,6 +44,10 @@ function MockAttemptModelConstructor(dto: any) {
 }
 Object.assign(MockAttemptModelConstructor, mockAttemptModel);
 
+const mockOrgService = {
+  getSmtpForSend: jest.fn().mockResolvedValue(null),
+};
+
 // ─── Suite ────────────────────────────────────────────────────────────────────
 
 describe('AttemptsService', () => {
@@ -53,6 +58,7 @@ describe('AttemptsService', () => {
       providers: [
         AttemptsService,
         { provide: getModelToken(PhishingAttempt.name), useValue: MockAttemptModelConstructor },
+        { provide: OrganizationService, useValue: mockOrgService },
       ],
     }).compile();
 

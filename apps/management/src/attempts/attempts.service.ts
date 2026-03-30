@@ -8,6 +8,7 @@ import { PhishingAttempt } from '../schemas/phishing-attempt.schema';
 import { CreatePhishingAttemptDto, BulkPhishingAttemptDto } from '../dto/phishing-attempt.dto';
 import { AttemptStatus } from '@app/shared';
 import { v4 as uuidv4 } from 'uuid';
+import { OrganizationService } from '../organization/organization.service';
 
 export interface BulkEmailResult {
   email: string;
@@ -38,6 +39,7 @@ export class AttemptsService {
   constructor(
     @InjectModel(PhishingAttempt.name)
     private phishingAttemptModel: Model<PhishingAttempt>,
+    private orgService: OrganizationService,
   ) {}
 
   // ─── SSE ──────────────────────────────────────────────────────────────────
@@ -118,9 +120,10 @@ export class AttemptsService {
 
     try {
       const simulationUrl = process.env.PHISHING_SIMULATION_URL || 'http://localhost:3000';
+      const smtp = await this.orgService.getSmtpForSend(user.organizationId);
       await axios.post(
         `${simulationUrl}/phishing/send`,
-        { recipientEmail: dto.email, subject: dto.subject, content: dto.content, attemptId },
+        { recipientEmail: dto.email, subject: dto.subject, content: dto.content, attemptId, smtp },
         { timeout: 5_000 },
       );
       return attempt;
@@ -134,6 +137,7 @@ export class AttemptsService {
 
   async bulkCreateAttempts(dto: BulkPhishingAttemptDto, user: UserCtx) {
     const simulationUrl = process.env.PHISHING_SIMULATION_URL || 'http://localhost:3000';
+    const smtp = await this.orgService.getSmtpForSend(user.organizationId);
 
     const results = await Promise.all(
       dto.emails.map(async (email): Promise<BulkEmailResult> => {
@@ -147,7 +151,7 @@ export class AttemptsService {
         try {
           await axios.post(
             `${simulationUrl}/phishing/send`,
-            { recipientEmail: email, subject: dto.subject, content: dto.content, attemptId },
+            { recipientEmail: email, subject: dto.subject, content: dto.content, attemptId, smtp },
             { timeout: 5_000 },
           );
           return { email, success: true, attemptId };

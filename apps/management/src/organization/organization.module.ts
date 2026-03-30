@@ -14,5 +14,6 @@ import { User, UserSchema } from '../schemas/user.schema';
   ],
   providers: [OrganizationService],
   controllers: [OrganizationController],
+  exports: [OrganizationService],
 })
 export class OrganizationModule {}

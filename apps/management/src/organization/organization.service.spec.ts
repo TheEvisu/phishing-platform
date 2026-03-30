@@ -99,8 +99,10 @@ describe('OrganizationService', () => {
   // ─── getOrg ───────────────────────────────────────────────────────────────
 
   describe('getOrg', () => {
-    it('returns the organization by id', async () => {
-      mockOrgModel.findById.mockReturnValue({ lean: () => ({ exec: () => Promise.resolve(mockOrg) }) });
+    it('returns the organization by id without smtpConfig', async () => {
+      mockOrgModel.findById.mockReturnValue({
+        select: () => ({ lean: () => ({ exec: () => Promise.resolve(mockOrg) }) }),
+      });
 
       const result = await service.getOrg(ORG_ID);
 

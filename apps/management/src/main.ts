@@ -28,14 +28,16 @@ async function bootstrap() {
     exposedHeaders: ['X-App-Version'],
   });
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('Phishing Management API')
-    .setDescription('API for managing phishing simulation campaigns')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document);
+  if (process.env.NODE_ENV !== 'production') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Phishing Management API')
+      .setDescription('API for managing phishing simulation campaigns')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   app.enableShutdownHooks();
 

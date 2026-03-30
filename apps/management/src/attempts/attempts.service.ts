@@ -10,6 +10,12 @@ import { AttemptStatus } from '@app/shared';
 import { v4 as uuidv4 } from 'uuid';
 import { OrganizationService } from '../organization/organization.service';
 
+/** In production, strip internal server details from error messages. */
+function sanitizeError(err: unknown): string {
+  if (process.env.NODE_ENV === 'production') return 'Delivery failed';
+  return err instanceof Error ? err.message : 'Unknown error';
+}
+
 export interface BulkEmailResult {
   email: string;
   success: boolean;
@@ -159,8 +165,7 @@ export class AttemptsService {
           attempt.status = AttemptStatus.FAILED;
           await attempt.save();
           this.statusBus$.next({ attemptId, status: AttemptStatus.FAILED, organizationId: user.organizationId.toString(), createdBy: user.username });
-          const message = err instanceof Error ? err.message : 'Unknown error';
-          return { email, success: false, attemptId, error: message };
+          return { email, success: false, attemptId, error: sanitizeError(err) };
         }
       }),
     );

@@ -11,7 +11,7 @@ export interface SmtpConfigDoc {
   fromName?: string;
 }
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, versionKey: false })
 export class Organization extends Document {
   @Prop({ required: true })
   name!: string;

@@ -2,7 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 import { AttemptStatus } from '@app/shared';
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, versionKey: false })
 export class PhishingAttempt extends Document {
   @Prop({ required: true })
   email!: string;

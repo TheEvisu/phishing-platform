@@ -26,7 +26,7 @@ export class OrganizationService {
   ) {}
 
   async getOrg(organizationId: Types.ObjectId) {
-    return this.orgModel.findById(organizationId).lean().exec();
+    return this.orgModel.findById(organizationId).select('-smtpConfig -__v').lean().exec();
   }
 
   async getMembers(organizationId: Types.ObjectId) {

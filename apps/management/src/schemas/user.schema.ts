@@ -3,7 +3,7 @@ import { Document, Types } from 'mongoose';
 
 export type UserRole = 'org_admin' | 'member';
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, versionKey: false })
 export class User extends Document {
   @Prop({ required: true, unique: true })
   username!: string;

@@ -9,6 +9,11 @@ import { LaunchCampaignDto } from '../dto/campaign.dto';
 import { AttemptStatus } from '@app/shared';
 import { OrganizationService } from '../organization/organization.service';
 
+function sanitizeError(err: unknown): string {
+  if (process.env.NODE_ENV === 'production') return 'Delivery failed';
+  return err instanceof Error ? err.message : 'Unknown error';
+}
+
 export interface EmailResult {
   email: string;
   success: boolean;
@@ -70,8 +75,7 @@ export class CampaignsService {
         } catch (err: unknown) {
           attempt.status = AttemptStatus.FAILED;
           await attempt.save();
-          const message = err instanceof Error ? err.message : 'Unknown error';
-          return { email, success: false, attemptId, error: message };
+          return { email, success: false, attemptId, error: sanitizeError(err) };
         }
       }),
     );

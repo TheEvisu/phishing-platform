@@ -6,7 +6,7 @@ import { AttemptStatus } from '@app/shared';
  * Simulation DB only tracks delivery status and click events by attemptId.
  * The management DB is the source of truth for all attempt data.
  */
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, versionKey: false })
 export class PhishingAttempt extends Document {
   @Prop({ required: true, unique: true })
   attemptId!: string;

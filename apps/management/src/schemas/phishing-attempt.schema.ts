@@ -27,6 +27,9 @@ export class PhishingAttempt extends Document {
 
   @Prop({ type: Types.ObjectId, ref: 'Organization', required: true })
   organizationId!: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'Campaign' })
+  campaignId?: Types.ObjectId;
 }
 
 export const PhishingAttemptSchema = SchemaFactory.createForClass(PhishingAttempt);

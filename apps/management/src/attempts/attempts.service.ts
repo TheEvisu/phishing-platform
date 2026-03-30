@@ -9,6 +9,13 @@ import { CreatePhishingAttemptDto, BulkPhishingAttemptDto } from '../dto/phishin
 import { AttemptStatus } from '@app/shared';
 import { v4 as uuidv4 } from 'uuid';
 
+export interface BulkEmailResult {
+  email: string;
+  success: boolean;
+  attemptId: string;
+  error?: string;
+}
+
 interface StatusEvent {
   attemptId: string;
   status: AttemptStatus;
@@ -128,8 +135,8 @@ export class AttemptsService {
   async bulkCreateAttempts(dto: BulkPhishingAttemptDto, user: UserCtx) {
     const simulationUrl = process.env.PHISHING_SIMULATION_URL || 'http://localhost:3000';
 
-    const results = await Promise.allSettled(
-      dto.emails.map(async (email) => {
+    const results = await Promise.all(
+      dto.emails.map(async (email): Promise<BulkEmailResult> => {
         const attemptId = uuidv4();
         const attempt = new this.phishingAttemptModel({
           email, subject: dto.subject, content: dto.content,
@@ -143,19 +150,20 @@ export class AttemptsService {
             { recipientEmail: email, subject: dto.subject, content: dto.content, attemptId },
             { timeout: 5_000 },
           );
-          return attempt;
-        } catch {
+          return { email, success: true, attemptId };
+        } catch (err: unknown) {
           attempt.status = AttemptStatus.FAILED;
           await attempt.save();
           this.statusBus$.next({ attemptId, status: AttemptStatus.FAILED, organizationId: user.organizationId.toString(), createdBy: user.username });
-          return attempt;
+          const message = err instanceof Error ? err.message : 'Unknown error';
+          return { email, success: false, attemptId, error: message };
         }
       }),
     );
 
-    const sent   = results.filter((r) => r.status === 'fulfilled').length;
-    const failed = results.filter((r) => r.status === 'rejected').length;
-    return { sent, failed, total: dto.emails.length };
+    const sent   = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+    return { sent, failed, total: dto.emails.length, results };
   }
 
   async exportAttempts(user: UserCtx) {

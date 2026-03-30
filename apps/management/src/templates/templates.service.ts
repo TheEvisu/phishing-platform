@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Template } from '../schemas/template.schema';
-import { CreateTemplateDto } from '../dto/template.dto';
+import { CreateTemplateDto, UpdateTemplateDto } from '../dto/template.dto';
 
 interface UserCtx {
   username: string;
@@ -154,6 +154,15 @@ export class TemplatesService {
     const template = await this.templateModel.findOne({ _id: id, organizationId: user.organizationId });
     if (!template) throw new NotFoundException('Template not found');
     if (user.role !== 'org_admin' && template.createdBy !== user.username) throw new ForbiddenException('Access denied');
+    return template;
+  }
+
+  async update(id: string, dto: UpdateTemplateDto, user: UserCtx) {
+    const template = await this.templateModel.findOne({ _id: id, organizationId: user.organizationId });
+    if (!template) throw new NotFoundException('Template not found');
+    if (user.role !== 'org_admin' && template.createdBy !== user.username) throw new ForbiddenException('Access denied');
+    Object.assign(template, dto);
+    await template.save();
     return template;
   }
 

@@ -16,7 +16,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: (req: Request) => req?.cookies?.['access_token'] ?? null,
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_SECRET') || 'plug',
+      secretOrKey: configService.get<string>('JWT_SECRET'),
     });
   }
 
@@ -24,6 +24,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const user = await this.authService.validateUser(payload.username);
     if (!user) {
       this.logger.warn(`JWT validation failed: user not found`);
+      return null;
+    }
+    if (!user.organizationId) {
+      this.logger.warn(`JWT validation failed: user ${payload.username} has no organizationId`);
+      return null;
     }
     return user;
   }

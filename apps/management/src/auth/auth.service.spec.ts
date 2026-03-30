@@ -153,6 +153,42 @@ describe('AuthService', () => {
     });
   });
 
+  // ─── changePassword ───────────────────────────────────────────────────────
+
+  describe('changePassword', () => {
+    it('updates password when current password is correct', async () => {
+      mockUserModel.findOne.mockResolvedValue({ ...mockUser, save: jest.fn().mockResolvedValue(undefined) });
+      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+      (bcrypt.hash as jest.Mock).mockResolvedValue('newhashed');
+
+      const result = await service.changePassword(
+        { currentPassword: 'Password1!', newPassword: 'NewPassword2!' },
+        'testuser',
+      );
+
+      expect(bcrypt.compare).toHaveBeenCalledWith('Password1!', mockUser.password);
+      expect(bcrypt.hash).toHaveBeenCalledWith('NewPassword2!', 12);
+      expect(result).toEqual({ message: 'Password updated successfully' });
+    });
+
+    it('throws UnauthorizedException when current password is wrong', async () => {
+      mockUserModel.findOne.mockResolvedValue(mockUser);
+      (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+
+      await expect(
+        service.changePassword({ currentPassword: 'wrong', newPassword: 'NewPass2!' }, 'testuser'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('throws UnauthorizedException when user not found', async () => {
+      mockUserModel.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.changePassword({ currentPassword: 'any', newPassword: 'NewPass2!' }, 'nobody'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
   // ─── validateUser ─────────────────────────────────────────────────────────
 
   describe('validateUser', () => {

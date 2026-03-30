@@ -50,6 +50,20 @@ export class RegisterDto {
   password!: string;
 }
 
+export class ChangePasswordDto {
+  @ApiProperty({ example: 'currentpassword123', maxLength: 128 })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  currentPassword!: string;
+
+  @ApiProperty({ example: 'newstrongpassword456', minLength: 6, maxLength: 128 })
+  @IsString()
+  @MinLength(6)
+  @MaxLength(128)
+  newPassword!: string;
+}
+
 export class LoginDto {
   @ApiProperty({ example: 'john_doe', maxLength: 50 })
   @IsString()

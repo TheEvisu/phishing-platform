@@ -12,7 +12,7 @@ import * as bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { User } from '../schemas/user.schema';
 import { Organization } from '../schemas/organization.schema';
-import { RegisterOrgDto, RegisterDto, LoginDto } from '../dto/auth.dto';
+import { RegisterOrgDto, RegisterDto, LoginDto, ChangePasswordDto } from '../dto/auth.dto';
 
 @Injectable()
 export class AuthService {
@@ -81,6 +81,20 @@ export class AuthService {
 
     const org = await this.orgModel.findById(user.organizationId);
     return this.buildResponse(user, org);
+  }
+
+  // ─── Change password ───────────────────────────────────────────────────────
+
+  async changePassword(dto: ChangePasswordDto, username: string) {
+    const user = await this.userModel.findOne({ username });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const isValid = await bcrypt.compare(dto.currentPassword, user.password);
+    if (!isValid) throw new UnauthorizedException('Current password is incorrect');
+
+    user.password = await bcrypt.hash(dto.newPassword, 12);
+    await user.save();
+    return { message: 'Password updated successfully' };
   }
 
   // ─── Validate (JWT strategy) ───────────────────────────────────────────────

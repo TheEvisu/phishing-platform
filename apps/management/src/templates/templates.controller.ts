@@ -1,8 +1,8 @@
-import { Controller, Get, Post, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Types } from 'mongoose';
 import { TemplatesService } from './templates.service';
-import { CreateTemplateDto } from '../dto/template.dto';
+import { CreateTemplateDto, UpdateTemplateDto } from '../dto/template.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 interface UserCtx {
@@ -41,6 +41,12 @@ export class TemplatesController {
   @Get(':id')
   getById(@Param('id') id: string, @Request() req: { user: UserCtx }) {
     return this.templatesService.getById(id, req.user);
+  }
+
+  @ApiOperation({ summary: 'Update a template by ID' })
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateTemplateDto, @Request() req: { user: UserCtx }) {
+    return this.templatesService.update(id, dto, req.user);
   }
 
   @ApiOperation({ summary: 'Delete a template by ID' })

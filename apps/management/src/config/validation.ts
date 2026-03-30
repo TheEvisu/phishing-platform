@@ -5,6 +5,12 @@ export const validationSchema = Joi.object({
   PORT: Joi.number().default(3001),
   MONGODB_URI: Joi.string().default('mongodb://localhost:27017/phishing-management'),
   JWT_SECRET: Joi.string().min(32).required(),
+  INTERNAL_SECRET: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().min(32).required(),
+    otherwise: Joi.string().optional(),
+  }),
   CORS_ORIGIN: Joi.string().default('http://localhost:5173'),
   PHISHING_SIMULATION_URL: Joi.string().uri().default('http://localhost:3000'),
+  APP_VERSION: Joi.string().default('0.0.1'),
 });

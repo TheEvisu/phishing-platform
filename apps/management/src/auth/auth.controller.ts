@@ -1,6 +1,7 @@
 import {
   Controller,
   Post,
+  Patch,
   Body,
   UseGuards,
   Get,
@@ -11,7 +12,7 @@ import { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { RegisterOrgDto, RegisterDto, LoginDto } from '../dto/auth.dto';
+import { RegisterOrgDto, RegisterDto, LoginDto, ChangePasswordDto } from '../dto/auth.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 const COOKIE_OPTIONS = {
@@ -75,6 +76,19 @@ export class AuthController {
   logout(@Res({ passthrough: true }) res: Response) {
     res.clearCookie('access_token', { httpOnly: true, sameSite: 'strict', secure: process.env.NODE_ENV === 'production' });
     return { message: 'Logged out' };
+  }
+
+  @ApiOperation({ summary: 'Change password for the authenticated user' })
+  @ApiResponse({ status: 200, description: 'Password updated.' })
+  @ApiResponse({ status: 401, description: 'Current password incorrect.' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Patch('password')
+  changePassword(
+    @Body() dto: ChangePasswordDto,
+    @Request() req: { user: { username: string } },
+  ) {
+    return this.authService.changePassword(dto, req.user.username);
   }
 
   @ApiOperation({ summary: 'Get current user profile' })

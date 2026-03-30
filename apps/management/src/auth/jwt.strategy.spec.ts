@@ -28,8 +28,8 @@ describe('JwtStrategy', () => {
   });
 
   describe('validate', () => {
-    it('should return user when payload is valid', async () => {
-      const user = { username: 'testuser', email: 'test@example.com', role: 'admin' };
+    it('returns user when payload is valid and organizationId is set', async () => {
+      const user = { username: 'testuser', email: 'test@example.com', role: 'org_admin', organizationId: 'org-1' };
       mockAuthService.validateUser.mockResolvedValue(user);
 
       const result = await strategy.validate({ username: 'testuser', sub: 'id-1' });
@@ -38,10 +38,19 @@ describe('JwtStrategy', () => {
       expect(result).toEqual(user);
     });
 
-    it('should return null when user not found', async () => {
+    it('returns null when user not found', async () => {
       mockAuthService.validateUser.mockResolvedValue(null);
 
       const result = await strategy.validate({ username: 'ghost', sub: 'id-x' });
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null when user has no organizationId (pre-migration data)', async () => {
+      const user = { username: 'olduser', email: 'old@example.com', role: 'member', organizationId: undefined };
+      mockAuthService.validateUser.mockResolvedValue(user);
+
+      const result = await strategy.validate({ username: 'olduser', sub: 'id-2' });
 
       expect(result).toBeNull();
     });

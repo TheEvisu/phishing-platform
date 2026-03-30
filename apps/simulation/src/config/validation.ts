@@ -11,4 +11,9 @@ export const validationSchema = Joi.object({
   SMTP_FROM: Joi.string().email().default('noreply@phishingtest.com'),
   APP_URL: Joi.string().uri().default('http://localhost:3000'),
   MANAGEMENT_URL: Joi.string().uri().default('http://localhost:3001'),
+  INTERNAL_SECRET: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().min(32).required(),
+    otherwise: Joi.string().optional(),
+  }),
 });

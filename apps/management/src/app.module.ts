@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { AttemptsModule } from './attempts/attempts.module';
 import { TemplatesModule } from './templates/templates.module';
 import { OrganizationModule } from './organization/organization.module';
+import { CampaignsModule } from './campaigns/campaigns.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './health/health.controller';
@@ -33,6 +34,7 @@ import { createLoggerConfig } from '@app/shared';
     AttemptsModule,
     TemplatesModule,
     OrganizationModule,
+    CampaignsModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

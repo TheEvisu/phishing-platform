@@ -124,6 +124,44 @@ describe('TemplatesService', () => {
     });
   });
 
+  // ─── update ───────────────────────────────────────────────────────────────
+
+  describe('update', () => {
+    it('updates own template as member', async () => {
+      const saveMock = jest.fn().mockResolvedValue(undefined);
+      const doc = { ...mockTemplate, save: saveMock };
+      mockTemplateModel.findOne.mockResolvedValue(doc);
+
+      const result = await service.update('tpl-id-1', { subject: 'New Subject' }, memberUser);
+
+      expect(saveMock).toHaveBeenCalled();
+      expect(result.subject).toBe('New Subject');
+    });
+
+    it('allows admin to update any org template', async () => {
+      const saveMock = jest.fn().mockResolvedValue(undefined);
+      const doc = { ...mockTemplate, save: saveMock };
+      mockTemplateModel.findOne.mockResolvedValue(doc);
+
+      const result = await service.update('tpl-id-1', { name: 'Renamed' }, adminUser);
+
+      expect(saveMock).toHaveBeenCalled();
+      expect(result.name).toBe('Renamed');
+    });
+
+    it('throws NotFoundException when template not in org', async () => {
+      mockTemplateModel.findOne.mockResolvedValue(null);
+
+      await expect(service.update('nonexistent', { name: 'X' }, memberUser)).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws ForbiddenException when member tries to update another member template', async () => {
+      mockTemplateModel.findOne.mockResolvedValue({ ...mockTemplate }); // createdBy: 'alice'
+
+      await expect(service.update('tpl-id-1', { name: 'X' }, otherUser)).rejects.toThrow(ForbiddenException);
+    });
+  });
+
   // ─── delete ───────────────────────────────────────────────────────────────
 
   describe('delete', () => {

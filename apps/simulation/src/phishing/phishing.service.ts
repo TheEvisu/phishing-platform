@@ -47,9 +47,6 @@ export class PhishingService {
     const { recipientEmail, subject, content, attemptId, smtp } = sendPhishingDto;
 
     const phishingAttempt = new this.phishingAttemptModel({
-      recipientEmail,
-      subject,
-      content,
       attemptId,
       status: AttemptStatus.SENT,
     });

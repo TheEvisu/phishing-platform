@@ -104,7 +104,7 @@ export class AttemptsService {
 
     const skip = (page - 1) * limit;
     const [data, total] = await Promise.all([
-      this.phishingAttemptModel.find(f).sort({ createdAt: -1 }).skip(skip).limit(limit).exec(),
+      this.phishingAttemptModel.find(f).select('-content').sort({ createdAt: -1 }).skip(skip).limit(limit).exec(),
       this.phishingAttemptModel.countDocuments(f),
     ]);
 

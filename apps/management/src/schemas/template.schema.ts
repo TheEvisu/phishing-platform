@@ -23,3 +23,6 @@ export class Template extends Document {
 }
 
 export const TemplateSchema = SchemaFactory.createForClass(Template);
+
+TemplateSchema.index({ organizationId: 1, createdAt: -1 });
+TemplateSchema.index({ organizationId: 1, category: 1 });

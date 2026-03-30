@@ -13,7 +13,7 @@ export class PhishingAttempt extends Document {
   @Prop({ required: true })
   content!: string;
 
-  @Prop({ default: AttemptStatus.SENT, enum: Object.values(AttemptStatus) })
+  @Prop({ default: AttemptStatus.PENDING, enum: Object.values(AttemptStatus) })
   status!: string;
 
   @Prop()
@@ -36,3 +36,5 @@ export const PhishingAttemptSchema = SchemaFactory.createForClass(PhishingAttemp
 
 PhishingAttemptSchema.index({ organizationId: 1, createdAt: -1 });
 PhishingAttemptSchema.index({ organizationId: 1, createdBy: 1, createdAt: -1 });
+PhishingAttemptSchema.index({ campaignId: 1 });
+PhishingAttemptSchema.index({ organizationId: 1, status: 1 });

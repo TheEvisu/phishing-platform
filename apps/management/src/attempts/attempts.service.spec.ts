@@ -70,11 +70,12 @@ describe('AttemptsService', () => {
 
   describe('getAllAttempts', () => {
     function setupFind(results: any[]) {
-      const exec  = jest.fn().mockResolvedValue(results);
-      const limit = jest.fn().mockReturnValue({ exec });
-      const skip  = jest.fn().mockReturnValue({ limit });
-      const sort  = jest.fn().mockReturnValue({ skip });
-      mockAttemptModel.find.mockReturnValue({ sort });
+      const exec   = jest.fn().mockResolvedValue(results);
+      const limit  = jest.fn().mockReturnValue({ exec });
+      const skip   = jest.fn().mockReturnValue({ limit });
+      const sort   = jest.fn().mockReturnValue({ skip });
+      const select = jest.fn().mockReturnValue({ sort });
+      mockAttemptModel.find.mockReturnValue({ select });
       mockAttemptModel.countDocuments.mockResolvedValue(results.length);
     }
 
@@ -102,11 +103,12 @@ describe('AttemptsService', () => {
     });
 
     it('calculates skip and totalPages correctly for page 2', async () => {
-      const exec  = jest.fn().mockResolvedValue([]);
-      const limit = jest.fn().mockReturnValue({ exec });
-      const skip  = jest.fn().mockReturnValue({ limit });
-      const sort  = jest.fn().mockReturnValue({ skip });
-      mockAttemptModel.find.mockReturnValue({ sort });
+      const exec   = jest.fn().mockResolvedValue([]);
+      const limit  = jest.fn().mockReturnValue({ exec });
+      const skip   = jest.fn().mockReturnValue({ limit });
+      const sort   = jest.fn().mockReturnValue({ skip });
+      const select = jest.fn().mockReturnValue({ sort });
+      mockAttemptModel.find.mockReturnValue({ select });
       mockAttemptModel.countDocuments.mockResolvedValue(15);
 
       const result = await service.getAllAttempts(adminUser, 2, 10);

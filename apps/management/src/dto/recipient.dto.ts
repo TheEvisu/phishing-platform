@@ -13,8 +13,6 @@ import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaginationDto } from './pagination.dto';
 
-// ─── Create ───────────────────────────────────────────────────────────────────
-
 export class CreateRecipientDto {
   @ApiProperty({ example: 'alice@company.com' })
   @IsEmail()
@@ -48,8 +46,6 @@ export class CreateRecipientDto {
   @ArrayMaxSize(20)
   tags?: string[];
 }
-
-// ─── Update ───────────────────────────────────────────────────────────────────
 
 export class UpdateRecipientDto {
   @ApiPropertyOptional({ example: 'alice@company.com' })
@@ -88,8 +84,6 @@ export class UpdateRecipientDto {
   tags?: string[];
 }
 
-// ─── Bulk import ──────────────────────────────────────────────────────────────
-
 export class ImportRecipientsDto {
   @ApiProperty({ type: [CreateRecipientDto], minItems: 1, maxItems: 2000 })
   @IsArray()
@@ -100,8 +94,6 @@ export class ImportRecipientsDto {
   recipients!: CreateRecipientDto[];
 }
 
-// ─── Bulk delete ──────────────────────────────────────────────────────────────
-
 export class BulkDeleteRecipientsDto {
   @ApiProperty({ example: ['507f1f77bcf86cd799439011'] })
   @IsArray()
@@ -110,8 +102,6 @@ export class BulkDeleteRecipientsDto {
   @ArrayMaxSize(500)
   ids!: string[];
 }
-
-// ─── Query ────────────────────────────────────────────────────────────────────
 
 export class RecipientQueryDto extends PaginationDto {
   @ApiPropertyOptional({ example: 'alice', description: 'Search by email, first or last name' })

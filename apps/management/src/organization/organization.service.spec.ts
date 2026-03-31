@@ -64,8 +64,6 @@ const mockSmtpDto: SmtpConfigDto = {
   fromName: 'Security Team',
 };
 
-// ─── Model mocks ─────────────────────────────────────────────────────────────
-
 const mockOrgModel = {
   findById: jest.fn(),
   findByIdAndUpdate: jest.fn(),
@@ -77,8 +75,6 @@ const mockUserModel = {
   findOne: jest.fn(),
   findByIdAndDelete: jest.fn(),
 };
-
-// ─── Suite ────────────────────────────────────────────────────────────────────
 
 describe('OrganizationService', () => {
   let service: OrganizationService;
@@ -96,8 +92,6 @@ describe('OrganizationService', () => {
     jest.clearAllMocks();
   });
 
-  // ─── getOrg ───────────────────────────────────────────────────────────────
-
   describe('getOrg', () => {
     it('returns the organization by id without smtpConfig', async () => {
       mockOrgModel.findById.mockReturnValue({
@@ -110,8 +104,6 @@ describe('OrganizationService', () => {
       expect(result).toEqual(mockOrg);
     });
   });
-
-  // ─── getMembers ───────────────────────────────────────────────────────────
 
   describe('getMembers', () => {
     it('returns members of the organization', async () => {
@@ -126,8 +118,6 @@ describe('OrganizationService', () => {
       expect(result).toEqual(members);
     });
   });
-
-  // ─── regenerateInviteCode ─────────────────────────────────────────────────
 
   describe('regenerateInviteCode', () => {
     it('throws ForbiddenException for non-admin', async () => {
@@ -151,8 +141,6 @@ describe('OrganizationService', () => {
       expect(result).toEqual(updated);
     });
   });
-
-  // ─── removeMember ─────────────────────────────────────────────────────────
 
   describe('removeMember', () => {
     it('throws ForbiddenException for non-admin', async () => {
@@ -181,8 +169,6 @@ describe('OrganizationService', () => {
       expect(result).toEqual({ message: 'Member removed' });
     });
   });
-
-  // ─── getSmtpConfig ────────────────────────────────────────────────────────
 
   describe('getSmtpConfig', () => {
     it('returns null when org has no smtpConfig', async () => {
@@ -217,8 +203,6 @@ describe('OrganizationService', () => {
       expect(result?.passwordSet).toBe(false);
     });
   });
-
-  // ─── saveSmtpConfig ───────────────────────────────────────────────────────
 
   describe('saveSmtpConfig', () => {
     it('throws ForbiddenException for non-admin', async () => {
@@ -256,8 +240,6 @@ describe('OrganizationService', () => {
       expect(callArg['smtpConfig.passwordEncrypted']).not.toBe(mockSmtpDto.password);
     });
   });
-
-  // ─── testSmtpConfig ───────────────────────────────────────────────────────
 
   describe('testSmtpConfig', () => {
     it('throws ForbiddenException for non-admin', async () => {
@@ -302,8 +284,6 @@ describe('OrganizationService', () => {
       );
     });
   });
-
-  // ─── getSmtpForSend ───────────────────────────────────────────────────────
 
   describe('getSmtpForSend', () => {
     it('returns null when org has no smtpConfig', async () => {

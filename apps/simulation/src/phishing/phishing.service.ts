@@ -13,17 +13,17 @@ import { AttemptStatus } from '@app/shared';
 // ─── Click metadata types ─────────────────────────────────────────────────────
 
 export interface ClickMetadata {
-  // Server-side (always available)
+  // Server-side
   ip?: string;
   userAgent?: string;
   browser?: string;
   browserVersion?: string;
   os?: string;
   osVersion?: string;
-  deviceType?: string;        // 'mobile' | 'tablet' | 'desktop'
-  language?: string;          // from Accept-Language
-  referer?: string;           // cleaned (no query params)
-  // Client-side (from JS beacon)
+  deviceType?: string;
+  language?: string;
+  referer?: string;
+  // Client-side
   screenResolution?: string;
   viewportSize?: string;
   timezone?: string;
@@ -33,6 +33,18 @@ export interface ClickMetadata {
   touchSupport?: boolean;
   doNotTrack?: boolean;
   languages?: string;
+  webglVendor?: string;
+  webglRenderer?: string;
+  canvasFingerprint?: string;
+  deviceMemory?: number;
+  devicePixelRatio?: number;
+  connectionType?: string;
+  connectionDownlink?: number;
+  connectionRtt?: number;
+  plugins?: string;
+  orientation?: string;
+  pdfViewerEnabled?: boolean;
+  localIp?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -181,16 +193,28 @@ export class PhishingService {
 
   async mergeBeaconData(attemptId: string, dto: ClickBeaconDto): Promise<void> {
     const clientData: Partial<ClickMetadata> = {
-      screenResolution: dto.screenResolution,
-      viewportSize:     dto.viewportSize,
-      timezone:         dto.timezone,
-      language:         dto.language ?? undefined,
-      languages:        dto.languages,
-      platform:         dto.platform,
-      cpuCores:         dto.cpuCores,
-      colorDepth:       dto.colorDepth,
-      touchSupport:     dto.touchSupport,
-      doNotTrack:       dto.doNotTrack,
+      screenResolution:  dto.screenResolution,
+      viewportSize:      dto.viewportSize,
+      timezone:          dto.timezone,
+      language:          dto.language ?? undefined,
+      languages:         dto.languages,
+      platform:          dto.platform,
+      cpuCores:          dto.cpuCores,
+      colorDepth:        dto.colorDepth,
+      touchSupport:      dto.touchSupport,
+      doNotTrack:        dto.doNotTrack,
+      webglVendor:       dto.webglVendor,
+      webglRenderer:     dto.webglRenderer,
+      canvasFingerprint: dto.canvasFingerprint,
+      deviceMemory:      dto.deviceMemory,
+      devicePixelRatio:  dto.devicePixelRatio,
+      connectionType:    dto.connectionType,
+      connectionDownlink: dto.connectionDownlink,
+      connectionRtt:     dto.connectionRtt,
+      plugins:           dto.plugins,
+      orientation:       dto.orientation,
+      pdfViewerEnabled:  dto.pdfViewerEnabled,
+      localIp:           dto.localIp,
     };
 
     // Remove undefined keys

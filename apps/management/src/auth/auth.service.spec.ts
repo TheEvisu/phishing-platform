@@ -27,8 +27,6 @@ const mockUser = {
   organizationId: ORG_ID,
 };
 
-// ─── Model mocks ─────────────────────────────────────────────────────────────
-
 const mockUserModel = { findOne: jest.fn(), create: jest.fn() };
 function MockUserModel(dto: any) {
   return { ...mockUser, ...dto, save: jest.fn().mockResolvedValue(undefined) };
@@ -42,8 +40,6 @@ function MockOrgModel(dto: any) {
 Object.assign(MockOrgModel, mockOrgModel);
 
 const mockJwtService = { sign: jest.fn().mockReturnValue('mock-token') };
-
-// ─── Suite ────────────────────────────────────────────────────────────────────
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -61,8 +57,6 @@ describe('AuthService', () => {
     service = module.get<AuthService>(AuthService);
     jest.clearAllMocks();
   });
-
-  // ─── registerOrg ──────────────────────────────────────────────────────────
 
   describe('registerOrg', () => {
     const dto = { organizationName: 'Acme Corp', username: 'admin', email: 'admin@acme.com', password: 'Password1!' };
@@ -94,8 +88,6 @@ describe('AuthService', () => {
     });
   });
 
-  // ─── register (join via invite) ───────────────────────────────────────────
-
   describe('register', () => {
     const dto = { inviteCode: 'INV-ABCD1234', username: 'newmember', email: 'member@acme.com', password: 'Password1!' };
 
@@ -125,8 +117,6 @@ describe('AuthService', () => {
     });
   });
 
-  // ─── login ────────────────────────────────────────────────────────────────
-
   describe('login', () => {
     it('returns token on valid credentials', async () => {
       mockUserModel.findOne.mockResolvedValue(mockUser);
@@ -152,8 +142,6 @@ describe('AuthService', () => {
       await expect(service.login({ username: 'testuser', password: 'wrong' })).rejects.toThrow(UnauthorizedException);
     });
   });
-
-  // ─── changePassword ───────────────────────────────────────────────────────
 
   describe('changePassword', () => {
     it('updates password when current password is correct', async () => {
@@ -188,8 +176,6 @@ describe('AuthService', () => {
       ).rejects.toThrow(UnauthorizedException);
     });
   });
-
-  // ─── validateUser ─────────────────────────────────────────────────────────
 
   describe('validateUser', () => {
     it('returns user without password', async () => {

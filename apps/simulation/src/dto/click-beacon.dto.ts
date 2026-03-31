@@ -1,27 +1,23 @@
-import { IsBoolean, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
-/**
- * Client-side fingerprint collected via JS on the intermediate landing page.
- * All fields are optional — we never fail the request if a field is missing.
- */
 export class ClickBeaconDto {
   @IsOptional() @IsString() @MaxLength(20)
-  screenResolution?: string;   // e.g. "1920x1080"
+  screenResolution?: string;
 
   @IsOptional() @IsString() @MaxLength(20)
-  viewportSize?: string;       // e.g. "1280x720"
+  viewportSize?: string;
 
   @IsOptional() @IsString() @MaxLength(60)
-  timezone?: string;           // e.g. "Europe/Berlin"
+  timezone?: string;
 
   @IsOptional() @IsString() @MaxLength(30)
-  language?: string;           // e.g. "en-US"
+  language?: string;
 
   @IsOptional() @IsString() @MaxLength(200)
-  languages?: string;          // comma-separated
+  languages?: string;
 
   @IsOptional() @IsString() @MaxLength(60)
-  platform?: string;           // e.g. "MacIntel"
+  platform?: string;
 
   @IsOptional() @IsInt() @Min(1) @Max(256)
   cpuCores?: number;
@@ -34,4 +30,40 @@ export class ClickBeaconDto {
 
   @IsOptional() @IsBoolean()
   doNotTrack?: boolean;
+
+  @IsOptional() @IsString() @MaxLength(200)
+  webglVendor?: string;
+
+  @IsOptional() @IsString() @MaxLength(300)
+  webglRenderer?: string;
+
+  @IsOptional() @IsString() @MaxLength(64)
+  canvasFingerprint?: string;
+
+  @IsOptional() @IsNumber() @Min(0) @Max(128)
+  deviceMemory?: number;
+
+  @IsOptional() @IsNumber() @Min(0.1) @Max(10)
+  devicePixelRatio?: number;
+
+  @IsOptional() @IsString() @MaxLength(20)
+  connectionType?: string;
+
+  @IsOptional() @IsNumber() @Min(0) @Max(10000)
+  connectionDownlink?: number;
+
+  @IsOptional() @IsInt() @Min(0) @Max(10000)
+  connectionRtt?: number;
+
+  @IsOptional() @IsString() @MaxLength(500)
+  plugins?: string;
+
+  @IsOptional() @IsString() @MaxLength(50)
+  orientation?: string;
+
+  @IsOptional() @IsBoolean()
+  pdfViewerEnabled?: boolean;
+
+  @IsOptional() @IsString() @MaxLength(45)
+  localIp?: string;
 }

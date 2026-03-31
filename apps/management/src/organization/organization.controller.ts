@@ -40,8 +40,6 @@ export class OrganizationController {
     return this.orgService.removeMember(req.user.organizationId, id, req.user.role);
   }
 
-  // ─── SMTP ────────────────────────────────────────────────────────────────
-
   @ApiOperation({ summary: 'Get SMTP config (password masked)' })
   @Get('smtp')
   getSmtp(@Request() req: AuthRequest) {

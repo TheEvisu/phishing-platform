@@ -32,8 +32,6 @@ describe('AuthController', () => {
     jest.clearAllMocks();
   });
 
-  // ─── registerOrg ──────────────────────────────────────────────────────────
-
   describe('registerOrg', () => {
     it('calls service.registerOrg, sets cookie, returns user', async () => {
       mockAuthService.registerOrg.mockResolvedValue(serviceResult);
@@ -47,8 +45,6 @@ describe('AuthController', () => {
     });
   });
 
-  // ─── register ─────────────────────────────────────────────────────────────
-
   describe('register', () => {
     it('calls service.register, sets cookie, returns user', async () => {
       mockAuthService.register.mockResolvedValue(serviceResult);
@@ -61,8 +57,6 @@ describe('AuthController', () => {
       expect(result).toEqual({ user: serviceResult.user });
     });
   });
-
-  // ─── login ────────────────────────────────────────────────────────────────
 
   describe('login', () => {
     it('calls service.login, sets cookie, returns user', async () => {

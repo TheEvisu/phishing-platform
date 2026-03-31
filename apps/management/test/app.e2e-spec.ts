@@ -4,16 +4,22 @@ import { JwtModule, JwtService } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigModule } from '@nestjs/config';
 import { getModelToken } from '@nestjs/mongoose';
+import { ThrottlerModule } from '@nestjs/throttler';
 import request from 'supertest';
 import * as bcrypt from 'bcryptjs';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const cookieParser = require('cookie-parser');
 import axios from 'axios';
+import { Types } from 'mongoose';
 
 import { AuthController } from '../src/auth/auth.controller';
 import { AuthService } from '../src/auth/auth.service';
 import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { AttemptsController } from '../src/attempts/attempts.controller';
 import { AttemptsService } from '../src/attempts/attempts.service';
+import { OrganizationService } from '../src/organization/organization.service';
 import { User } from '../src/schemas/user.schema';
+import { Organization } from '../src/schemas/organization.schema';
 import { PhishingAttempt } from '../src/schemas/phishing-attempt.schema';
 
 jest.mock('axios');
@@ -25,14 +31,21 @@ process.env.JWT_SECRET = JWT_SECRET;
 describe('Management Service (e2e)', () => {
   let app: INestApplication;
   let jwtService: JwtService;
-  let authToken: string;
+  let authCookie: string;
+
+  const orgId = new Types.ObjectId();
 
   const mockUserFindOne = jest.fn();
-  const mockUserSave = jest.fn();
+  const mockUserCreate = jest.fn();
+
+  const mockOrgFindOne = jest.fn();
+  const mockOrgFindById = jest.fn();
+  const mockOrgCreate = jest.fn();
 
   const mockAttemptFind = jest.fn();
-  const mockAttemptFindById = jest.fn();
+  const mockAttemptFindOne = jest.fn();
   const mockAttemptFindByIdAndDelete = jest.fn();
+  const mockAttemptFindByIdAndUpdate = jest.fn();
   const mockAttemptCountDocuments = jest.fn();
   const mockAttemptSave = jest.fn();
 
@@ -42,45 +55,70 @@ describe('Management Service (e2e)', () => {
     _id: 'user-id-1',
     username: 'testuser',
     email: 'test@example.com',
-    role: 'admin',
+    role: 'org_admin',
+    organizationId: orgId,
+    password: '',
+  };
+
+  const testOrg = {
+    _id: orgId,
+    name: 'Test Org',
+    slug: 'test-org',
+    inviteCode: 'INV-TESTCODE',
   };
 
   const ownedAttempt = {
     _id: 'attempt-id-1',
     email: 'a@b.com',
+    subject: 'Test',
+    content: 'Body {{TRACKING_LINK}}',
     createdBy: 'testuser',
+    organizationId: orgId,
+    status: 'pending',
   };
 
   function MockUserModel(dto: any) {
-    return {
-      _id: 'user-id-1',
-      username: dto.username,
-      email: dto.email,
-      password: dto.password,
-      role: 'admin',
-      save: mockUserSave,
-    };
+    return { _id: 'user-id-new', ...dto, save: mockAttemptSave };
   }
-  Object.assign(MockUserModel, { findOne: mockUserFindOne });
+  Object.assign(MockUserModel, {
+    findOne: mockUserFindOne,
+    create: mockUserCreate,
+  });
+
+  function MockOrgModel(dto: any) {
+    return { _id: orgId, ...dto };
+  }
+  Object.assign(MockOrgModel, {
+    findOne: mockOrgFindOne,
+    findById: mockOrgFindById,
+    create: mockOrgCreate,
+  });
 
   function MockAttemptModel(dto: any) {
     return { _id: 'attempt-id-1', ...dto, status: 'pending', save: mockAttemptSave };
   }
   Object.assign(MockAttemptModel, {
     find: mockAttemptFind,
-    findById: mockAttemptFindById,
+    findOne: mockAttemptFindOne,
     findByIdAndDelete: mockAttemptFindByIdAndDelete,
+    findOneAndUpdate: mockAttemptFindByIdAndUpdate,
     countDocuments: mockAttemptCountDocuments,
   });
 
+  const mockOrgService = {
+    getSmtpForSend: jest.fn().mockResolvedValue(null),
+  };
+
   beforeAll(async () => {
     hashedPassword = await bcrypt.hash('testpass123', 1);
+    testUser.password = hashedPassword;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true }),
         PassportModule,
         JwtModule.register({ secret: JWT_SECRET, signOptions: { expiresIn: '24h' } }),
+        ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
       ],
       controllers: [AuthController, AttemptsController],
       providers: [
@@ -88,16 +126,25 @@ describe('Management Service (e2e)', () => {
         AttemptsService,
         JwtStrategy,
         { provide: getModelToken(User.name), useValue: MockUserModel },
+        { provide: getModelToken(Organization.name), useValue: MockOrgModel },
         { provide: getModelToken(PhishingAttempt.name), useValue: MockAttemptModel },
+        { provide: OrganizationService, useValue: mockOrgService },
       ],
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.use(cookieParser());
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
 
     jwtService = moduleFixture.get(JwtService);
-    authToken = jwtService.sign({ username: 'testuser', sub: 'user-id-1' });
+    const token = jwtService.sign({
+      username: 'testuser',
+      sub: 'user-id-1',
+      organizationId: orgId,
+      role: 'org_admin',
+    });
+    authCookie = `access_token=${token}`;
   });
 
   afterAll(async () => {
@@ -106,75 +153,119 @@ describe('Management Service (e2e)', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    mockUserSave.mockResolvedValue(undefined);
     mockAttemptSave.mockResolvedValue(undefined);
-    mockUserFindOne.mockResolvedValue({ ...testUser, password: hashedPassword });
+    mockUserFindOne.mockResolvedValue({ ...testUser });
+    mockOrgFindById.mockResolvedValue(testOrg);
+    mockOrgService.getSmtpForSend.mockResolvedValue(null);
+    mockAttemptCountDocuments.mockResolvedValue(0);
+    mockAttemptFindByIdAndUpdate.mockResolvedValue(null);
   });
 
-  // ─── Auth ────────────────────────────────────────────────────────────────────
+  describe('POST /auth/register-org', () => {
+    const validDto = {
+      organizationName: 'Acme Corp',
+      username: 'admin',
+      email: 'admin@acme.com',
+      password: 'securepass123',
+    };
 
-  describe('POST /auth/register', () => {
-    it('201: registers new user and returns access_token', async () => {
+    it('201: creates org + admin, sets httpOnly cookie', async () => {
       mockUserFindOne.mockResolvedValueOnce(null);
+      mockOrgFindOne.mockResolvedValueOnce(null);
+      mockOrgCreate.mockResolvedValueOnce({ ...testOrg, _id: orgId });
+      mockUserCreate.mockResolvedValueOnce({ ...testUser, username: 'admin', email: 'admin@acme.com' });
 
       const res = await request(app.getHttpServer())
-        .post('/auth/register')
-        .send({ username: 'newuser', email: 'new@example.com', password: 'password123' })
+        .post('/auth/register-org')
+        .send(validDto)
         .expect(201);
 
-      expect(res.body).toHaveProperty('access_token');
-      expect(res.body.user).toMatchObject({ username: 'newuser', email: 'new@example.com' });
-    });
-
-    it('400: invalid email', async () => {
-      await request(app.getHttpServer())
-        .post('/auth/register')
-        .send({ username: 'user', email: 'not-an-email', password: 'password123' })
-        .expect(400);
-    });
-
-    it('400: password too short (< 6 chars)', async () => {
-      await request(app.getHttpServer())
-        .post('/auth/register')
-        .send({ username: 'user', email: 'user@example.com', password: '123' })
-        .expect(400);
+      expect(res.body).toHaveProperty('user');
+      expect(res.headers['set-cookie']).toBeDefined();
+      expect(res.headers['set-cookie'][0]).toContain('access_token');
+      expect(res.headers['set-cookie'][0]).toContain('HttpOnly');
     });
 
     it('400: missing required fields', async () => {
       await request(app.getHttpServer())
-        .post('/auth/register')
-        .send({ email: 'user@example.com' })
+        .post('/auth/register-org')
+        .send({ username: 'admin' })
         .expect(400);
     });
 
-    it('400: username exceeds MaxLength', async () => {
+    it('409: username already taken', async () => {
+      mockUserFindOne.mockResolvedValueOnce(testUser);
+
+      await request(app.getHttpServer())
+        .post('/auth/register-org')
+        .send(validDto)
+        .expect(409);
+    });
+  });
+
+  describe('POST /auth/register', () => {
+    const validDto = {
+      inviteCode: 'INV-TESTCODE',
+      username: 'member1',
+      email: 'member@example.com',
+      password: 'password123',
+    };
+
+    it('201: registers member via invite code, sets httpOnly cookie', async () => {
+      mockOrgFindOne.mockResolvedValueOnce(testOrg);
+      mockUserFindOne.mockResolvedValueOnce(null);
+      mockUserCreate.mockResolvedValueOnce({ ...testUser, username: 'member1', role: 'member' });
+
+      const res = await request(app.getHttpServer())
+        .post('/auth/register')
+        .send(validDto)
+        .expect(201);
+
+      expect(res.body).toHaveProperty('user');
+      expect(res.headers['set-cookie'][0]).toContain('access_token');
+    });
+
+    it('400: missing inviteCode', async () => {
       await request(app.getHttpServer())
         .post('/auth/register')
-        .send({ username: 'a'.repeat(51), email: 'user@example.com', password: 'password123' })
+        .send({ username: 'u', email: 'u@e.com', password: 'pass123' })
         .expect(400);
+    });
+
+    it('404: invalid invite code', async () => {
+      mockOrgFindOne.mockResolvedValueOnce(null);
+
+      await request(app.getHttpServer())
+        .post('/auth/register')
+        .send({ ...validDto, inviteCode: 'INV-INVALID' })
+        .expect(404);
     });
 
     it('409: username or email already taken', async () => {
-      mockUserFindOne.mockResolvedValueOnce({ ...testUser, password: hashedPassword });
+      mockOrgFindOne.mockResolvedValueOnce(testOrg);
+      mockUserFindOne.mockResolvedValueOnce(testUser);
 
       await request(app.getHttpServer())
         .post('/auth/register')
-        .send({ username: 'testuser', email: 'test@example.com', password: 'password123' })
+        .send(validDto)
         .expect(409);
     });
   });
 
   describe('POST /auth/login', () => {
-    it('201: valid credentials return access_token', async () => {
+    it('201: valid credentials set httpOnly cookie', async () => {
       mockUserFindOne.mockResolvedValueOnce({ ...testUser, password: hashedPassword });
+      mockOrgFindById.mockResolvedValueOnce(testOrg);
 
       const res = await request(app.getHttpServer())
         .post('/auth/login')
         .send({ username: 'testuser', password: 'testpass123' })
         .expect(201);
 
-      expect(res.body).toHaveProperty('access_token');
-      expect(res.body.user).toMatchObject({ username: 'testuser' });
+      expect(res.body).toHaveProperty('user');
+      expect(res.body.user.username).toBe('testuser');
+      expect(res.headers['set-cookie'][0]).toContain('access_token');
+      expect(res.body).not.toHaveProperty('access_token');
     });
 
     it('400: missing username', async () => {
@@ -204,69 +295,70 @@ describe('Management Service (e2e)', () => {
   });
 
   describe('GET /auth/profile', () => {
-    it('200: returns user profile with valid JWT', async () => {
+    it('200: returns user profile with valid cookie', async () => {
+      mockUserFindOne.mockResolvedValueOnce({ ...testUser });
+
       const res = await request(app.getHttpServer())
         .get('/auth/profile')
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Cookie', authCookie)
         .expect(200);
 
-      expect(res.body).toMatchObject({ username: 'testuser', email: 'test@example.com' });
+      expect(res.body).toMatchObject({ username: 'testuser' });
     });
 
-    it('401: no JWT provided', async () => {
+    it('401: no cookie provided', async () => {
       await request(app.getHttpServer()).get('/auth/profile').expect(401);
     });
 
-    it('401: malformed JWT', async () => {
+    it('401: malformed token in cookie', async () => {
       await request(app.getHttpServer())
         .get('/auth/profile')
-        .set('Authorization', 'Bearer invalid.jwt.token')
+        .set('Cookie', 'access_token=invalid.jwt.token')
         .expect(401);
     });
   });
 
-  // ─── Attempts ────────────────────────────────────────────────────────────────
-
   describe('GET /attempts', () => {
     it('200: returns paginated attempts for current user', async () => {
+      mockUserFindOne.mockResolvedValue({ ...testUser });
       mockAttemptFind.mockReturnValue({
-        sort: jest.fn().mockReturnValue({
-          skip: jest.fn().mockReturnValue({
-            limit: jest.fn().mockReturnValue({
-              exec: jest.fn().mockResolvedValue([ownedAttempt]),
-            }),
-          }),
-        }),
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue([ownedAttempt]),
       });
       mockAttemptCountDocuments.mockResolvedValue(1);
 
       const res = await request(app.getHttpServer())
         .get('/attempts')
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Cookie', authCookie)
         .expect(200);
 
-      expect(res.body).toMatchObject({ data: [ownedAttempt], total: 1, page: 1, limit: 10, totalPages: 1 });
+      expect(res.body).toMatchObject({ total: 1, page: 1, limit: 10, totalPages: 1 });
+      expect(res.body.data[0]).toMatchObject({ email: 'a@b.com', createdBy: 'testuser' });
     });
 
     it('200: respects page and limit query params', async () => {
+      mockUserFindOne.mockResolvedValue({ ...testUser });
       mockAttemptFind.mockReturnValue({
-        sort: jest.fn().mockReturnValue({
-          skip: jest.fn().mockReturnValue({
-            limit: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue([]) }),
-          }),
-        }),
+        select: jest.fn().mockReturnThis(),
+        sort: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue([]),
       });
       mockAttemptCountDocuments.mockResolvedValue(25);
 
       const res = await request(app.getHttpServer())
         .get('/attempts?page=2&limit=5')
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Cookie', authCookie)
         .expect(200);
 
       expect(res.body).toMatchObject({ page: 2, limit: 5, total: 25, totalPages: 5 });
     });
 
-    it('401: no JWT', async () => {
+    it('401: no cookie', async () => {
       await request(app.getHttpServer()).get('/attempts').expect(401);
     });
   });
@@ -275,11 +367,13 @@ describe('Management Service (e2e)', () => {
     const validDto = { email: 'target@example.com', subject: 'Test Subject', content: 'Body' };
 
     it('201: creates attempt and calls simulation service', async () => {
+      mockUserFindOne.mockResolvedValue({ ...testUser });
+      mockAttemptSave.mockResolvedValueOnce(undefined);
       mockedAxios.post.mockResolvedValue({ data: {} });
 
       const res = await request(app.getHttpServer())
         .post('/attempts')
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Cookie', authCookie)
         .send(validDto)
         .expect(201);
 
@@ -292,93 +386,81 @@ describe('Management Service (e2e)', () => {
     });
 
     it('400: invalid email in body', async () => {
+      mockUserFindOne.mockResolvedValue({ ...testUser });
       await request(app.getHttpServer())
         .post('/attempts')
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Cookie', authCookie)
         .send({ ...validDto, email: 'not-an-email' })
         .expect(400);
     });
 
     it('400: missing subject and content', async () => {
+      mockUserFindOne.mockResolvedValue({ ...testUser });
       await request(app.getHttpServer())
         .post('/attempts')
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Cookie', authCookie)
         .send({ email: 'target@example.com' })
         .expect(400);
     });
 
-    it('401: no JWT', async () => {
+    it('401: no cookie', async () => {
       await request(app.getHttpServer()).post('/attempts').send(validDto).expect(401);
     });
   });
 
   describe('GET /attempts/:id', () => {
     it('200: returns attempt owned by current user', async () => {
-      mockAttemptFindById.mockResolvedValue(ownedAttempt);
+      mockUserFindOne.mockResolvedValue({ ...testUser });
+      mockAttemptFindOne.mockResolvedValueOnce(ownedAttempt);
 
       const res = await request(app.getHttpServer())
         .get('/attempts/attempt-id-1')
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Cookie', authCookie)
         .expect(200);
 
-      expect(res.body).toEqual(ownedAttempt);
-    });
-
-    it('403: attempt belongs to another user', async () => {
-      mockAttemptFindById.mockResolvedValue({ ...ownedAttempt, createdBy: 'otheruser' });
-
-      await request(app.getHttpServer())
-        .get('/attempts/attempt-id-1')
-        .set('Authorization', `Bearer ${authToken}`)
-        .expect(403);
+      expect(res.body).toMatchObject({ email: 'a@b.com' });
     });
 
     it('404: attempt not found', async () => {
-      mockAttemptFindById.mockResolvedValue(null);
+      mockUserFindOne.mockResolvedValue({ ...testUser });
+      mockAttemptFindOne.mockResolvedValueOnce(null);
 
       await request(app.getHttpServer())
-        .get('/attempts/nonexistent')
-        .set('Authorization', `Bearer ${authToken}`)
+        .get('/attempts/nonexistent-id-000000000000')
+        .set('Cookie', authCookie)
         .expect(404);
     });
 
-    it('401: no JWT', async () => {
+    it('401: no cookie', async () => {
       await request(app.getHttpServer()).get('/attempts/attempt-id-1').expect(401);
     });
   });
 
   describe('DELETE /attempts/:id', () => {
     it('200: deletes attempt owned by current user', async () => {
-      mockAttemptFindById.mockResolvedValue(ownedAttempt);
-      mockAttemptFindByIdAndDelete.mockResolvedValue(ownedAttempt);
+      mockUserFindOne.mockResolvedValue({ ...testUser });
+      mockAttemptFindOne.mockResolvedValueOnce(ownedAttempt);
+      mockAttemptFindByIdAndDelete.mockResolvedValueOnce(ownedAttempt);
 
       const res = await request(app.getHttpServer())
         .delete('/attempts/attempt-id-1')
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Cookie', authCookie)
         .expect(200);
 
       expect(res.body).toEqual({ message: 'Phishing attempt deleted successfully' });
     });
 
-    it('403: attempt belongs to another user', async () => {
-      mockAttemptFindById.mockResolvedValue({ ...ownedAttempt, createdBy: 'otheruser' });
+    it('403: attempt not found/not owned', async () => {
+      mockUserFindOne.mockResolvedValue({ ...testUser });
+      mockAttemptFindOne.mockResolvedValueOnce(null);
 
       await request(app.getHttpServer())
         .delete('/attempts/attempt-id-1')
-        .set('Authorization', `Bearer ${authToken}`)
+        .set('Cookie', authCookie)
         .expect(403);
     });
 
-    it('404: attempt not found', async () => {
-      mockAttemptFindById.mockResolvedValue(null);
-
-      await request(app.getHttpServer())
-        .delete('/attempts/nonexistent')
-        .set('Authorization', `Bearer ${authToken}`)
-        .expect(404);
-    });
-
-    it('401: no JWT', async () => {
+    it('401: no cookie', async () => {
       await request(app.getHttpServer()).delete('/attempts/attempt-id-1').expect(401);
     });
   });

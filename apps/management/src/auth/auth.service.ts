@@ -24,8 +24,6 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  // ─── Register Organization (creates org + first admin) ─────────────────────
-
   async registerOrg(dto: RegisterOrgDto) {
     const { organizationName, username, email, password } = dto;
 
@@ -48,8 +46,6 @@ export class AuthService {
     return this.buildResponse(user, org);
   }
 
-  // ─── Register Member (join via invite code) ────────────────────────────────
-
   async register(dto: RegisterDto) {
     const { inviteCode, username, email, password } = dto;
 
@@ -68,8 +64,6 @@ export class AuthService {
     return this.buildResponse(user, org);
   }
 
-  // ─── Login ─────────────────────────────────────────────────────────────────
-
   async login(dto: LoginDto) {
     const { username, password } = dto;
 
@@ -83,8 +77,6 @@ export class AuthService {
     return this.buildResponse(user, org);
   }
 
-  // ─── Change password ───────────────────────────────────────────────────────
-
   async changePassword(dto: ChangePasswordDto, username: string) {
     const user = await this.userModel.findOne({ username });
     if (!user) throw new UnauthorizedException('User not found');
@@ -96,8 +88,6 @@ export class AuthService {
     await user.save();
     return { message: 'Password updated successfully' };
   }
-
-  // ─── Validate (JWT strategy) ───────────────────────────────────────────────
 
   async validateUser(username: string) {
     const user = await this.userModel.findOne({ username });
@@ -111,8 +101,6 @@ export class AuthService {
       organizationId: user.organizationId,
     };
   }
-
-  // ─── Helpers ───────────────────────────────────────────────────────────────
 
   private buildResponse(user: User, org: Organization | null) {
     const payload = {

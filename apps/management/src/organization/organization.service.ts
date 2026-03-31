@@ -53,8 +53,6 @@ export class OrganizationService {
     return { message: 'Member removed' };
   }
 
-  // ─── SMTP ──────────────────────────────────────────────────────────────────
-
   async getSmtpConfig(organizationId: Types.ObjectId) {
     const org = await this.orgModel.findById(organizationId).lean().exec();
     if (!org?.smtpConfig) return null;

@@ -16,6 +16,7 @@ const mockAttempt = {
 
 const mockAttemptModel = {
   findOne: jest.fn(),
+  findOneAndUpdate: jest.fn(),
 };
 
 function MockAttemptModelConstructor(dto: any) {
@@ -83,24 +84,32 @@ describe('PhishingService', () => {
   });
 
   describe('trackClick', () => {
-    it('should update status to clicked and set clickedAt', async () => {
-      const saveMock = jest.fn().mockResolvedValue(undefined);
-      const attempt = { ...mockAttempt, status: AttemptStatus.SENT, save: saveMock };
-      mockAttemptModel.findOne.mockResolvedValue(attempt);
+    const mockReq = {
+      headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'en-US,en;q=0.9' },
+      ip: '1.2.3.4',
+    } as any;
 
-      await service.trackClick('uuid-1');
+    it('should call findOneAndUpdate with CLICKED status and return metadata', async () => {
+      mockAttemptModel.findOneAndUpdate.mockResolvedValue({ clickMetadata: {} });
 
-      expect(attempt.status).toBe(AttemptStatus.CLICKED);
-      expect(attempt.clickedAt).toBeInstanceOf(Date);
-      expect(saveMock).toHaveBeenCalled();
+      const result = await service.trackClick('uuid-1', mockReq);
+
+      expect(mockAttemptModel.findOneAndUpdate).toHaveBeenCalledWith(
+        { attemptId: 'uuid-1' },
+        expect.objectContaining({ status: AttemptStatus.CLICKED }),
+        { new: true },
+      );
+      expect(result).toHaveProperty('metadata');
+      expect(result.metadata).toHaveProperty('ip', '1.2.3.4');
     });
 
-    it('should return null if attempt not found', async () => {
-      mockAttemptModel.findOne.mockResolvedValue(null);
+    it('should still return metadata even when attempt is not found', async () => {
+      mockAttemptModel.findOneAndUpdate.mockResolvedValue(null);
 
-      const result = await service.trackClick('nonexistent');
+      const result = await service.trackClick('nonexistent', mockReq);
 
-      expect(result).toBeNull();
+      // notifyManagement fires but we don't await it — result is still metadata object
+      expect(result).toHaveProperty('metadata');
     });
   });
 });

@@ -18,12 +18,16 @@ describe('Simulation Service (e2e)', () => {
   let app: INestApplication;
 
   const mockAttemptFindOne = jest.fn();
+  const mockAttemptFindOneAndUpdate = jest.fn();
   const mockAttemptSave = jest.fn();
 
   function MockAttemptModel(dto: any) {
     return { ...dto, status: AttemptStatus.SENT, save: mockAttemptSave };
   }
-  Object.assign(MockAttemptModel, { findOne: mockAttemptFindOne });
+  Object.assign(MockAttemptModel, {
+    findOne: mockAttemptFindOne,
+    findOneAndUpdate: mockAttemptFindOneAndUpdate,
+  });
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -46,6 +50,7 @@ describe('Simulation Service (e2e)', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     mockAttemptSave.mockResolvedValue(undefined);
+    mockAttemptFindOneAndUpdate.mockResolvedValue(null);
     mockSendMail.mockResolvedValue({});
   });
 
@@ -113,29 +118,46 @@ describe('Simulation Service (e2e)', () => {
   // ─── Track click ─────────────────────────────────────────────────────────────
 
   describe('GET /phishing/click/:attemptId', () => {
-    it('200: updates attempt status to clicked and returns HTML alert', async () => {
-      const saveMock = jest.fn().mockResolvedValue(undefined);
-      const attempt = { status: AttemptStatus.SENT, clickedAt: undefined, save: saveMock };
-      mockAttemptFindOne.mockResolvedValue(attempt);
+    it('200: records click and serves CSP-safe intermediate redirect page', async () => {
+      mockAttemptFindOneAndUpdate.mockResolvedValue({ clickMetadata: {} });
 
       const res = await request(app.getHttpServer())
         .get('/phishing/click/uuid-1')
         .expect(200);
 
-      expect(res.text).toContain('Phishing Test Alert');
-      expect(attempt.status).toBe(AttemptStatus.CLICKED);
-      expect(attempt.clickedAt).toBeInstanceOf(Date);
-      expect(saveMock).toHaveBeenCalled();
+      expect(res.text).toContain('uuid-1');
+      expect(res.text).toContain('data-beacon');
+      expect(res.text).toContain('data-training');
+      expect(res.text).toContain('src="/phishing/collector.js"');
+      expect(res.text).not.toContain('<script>');
+      expect(mockAttemptFindOneAndUpdate).toHaveBeenCalledWith(
+        { attemptId: 'uuid-1' },
+        expect.objectContaining({ status: AttemptStatus.CLICKED }),
+        expect.any(Object),
+      );
     });
 
-    it('200: still returns HTML when attempt is not found', async () => {
-      mockAttemptFindOne.mockResolvedValue(null);
+    it('200: still returns redirect page when attempt is not found', async () => {
+      mockAttemptFindOneAndUpdate.mockResolvedValue(null);
 
       const res = await request(app.getHttpServer())
         .get('/phishing/click/nonexistent')
         .expect(200);
 
-      expect(res.text).toContain('Phishing Test Alert');
+      expect(res.text).toContain('data-training');
+      expect(res.text).toContain('src="/phishing/collector.js"');
+    });
+  });
+
+  describe('GET /phishing/collector.js', () => {
+    it('200: serves the client-side fingerprint collector script', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/phishing/collector.js')
+        .expect(200);
+
+      expect(res.headers['content-type']).toContain('application/javascript');
+      expect(res.text).toContain('sendBeacon');
+      expect(res.text).toContain('data-training');
     });
   });
 });

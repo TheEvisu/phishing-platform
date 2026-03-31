@@ -25,7 +25,7 @@ To avoid being locked out of your account and losing access to critical systems,
 
 If you do not reset your password before the deadline, your account will be suspended and you will need to contact the IT helpdesk to regain access.
 
-This is an automated message — please do not reply to this email.
+This is an automated message - please do not reply to this email.
 
 Best regards,
 IT Security Team`,
@@ -55,7 +55,7 @@ IT Security Operations`,
   {
     name: 'Employee Handbook Signature',
     category: 'HR',
-    subject: 'Important: Updated Employee Handbook — Your Signature is Required',
+    subject: 'Important: Updated Employee Handbook - Your Signature is Required',
     content: `Dear Employee,
 
 We have recently updated our Employee Handbook to reflect changes in company policy, including updates to our remote work policy, code of conduct, and data protection guidelines.

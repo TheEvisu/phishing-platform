@@ -21,7 +21,6 @@ const mockTemplate = {
   organizationId: ORG_ID,
 };
 
-// ─── Model mocks ─────────────────────────────────────────────────────────────
 
 const mockTemplateModel = {
   find: jest.fn(),
@@ -34,7 +33,6 @@ function MockTemplateModelConstructor(dto: any) {
 }
 Object.assign(MockTemplateModelConstructor, mockTemplateModel);
 
-// ─── Suite ────────────────────────────────────────────────────────────────────
 
 describe('TemplatesService', () => {
   let service: TemplatesService;
@@ -51,7 +49,6 @@ describe('TemplatesService', () => {
     jest.clearAllMocks();
   });
 
-  // ─── getAll ───────────────────────────────────────────────────────────────
 
   describe('getAll', () => {
     it('admin query omits createdBy filter', async () => {
@@ -80,7 +77,6 @@ describe('TemplatesService', () => {
     });
   });
 
-  // ─── create ───────────────────────────────────────────────────────────────
 
   describe('create', () => {
     it('saves template with user context', async () => {
@@ -92,7 +88,6 @@ describe('TemplatesService', () => {
     });
   });
 
-  // ─── getById ──────────────────────────────────────────────────────────────
 
   describe('getById', () => {
     it('returns template for admin regardless of createdBy', async () => {
@@ -124,7 +119,6 @@ describe('TemplatesService', () => {
     });
   });
 
-  // ─── update ───────────────────────────────────────────────────────────────
 
   describe('update', () => {
     it('updates own template as member', async () => {
@@ -162,7 +156,6 @@ describe('TemplatesService', () => {
     });
   });
 
-  // ─── delete ───────────────────────────────────────────────────────────────
 
   describe('delete', () => {
     it('deletes template as admin', async () => {
@@ -197,7 +190,6 @@ describe('TemplatesService', () => {
     });
   });
 
-  // ─── seedDefaults ─────────────────────────────────────────────────────────
 
   describe('seedDefaults', () => {
     it('creates all 6 default templates when none exist', async () => {

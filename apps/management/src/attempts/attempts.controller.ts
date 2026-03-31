@@ -23,7 +23,7 @@ interface UserCtx {
 export class AttemptsController {
   constructor(private readonly attemptsService: AttemptsService) {}
 
-  @ApiOperation({ summary: 'SSE stream — real-time status updates' })
+  @ApiOperation({ summary: 'SSE stream - real-time status updates' })
   @UseGuards(JwtAuthGuard)
   @Sse('events')
   events(@Request() req: { user: UserCtx }): Observable<MessageEvent> {

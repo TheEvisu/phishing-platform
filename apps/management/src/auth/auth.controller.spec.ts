@@ -71,7 +71,6 @@ describe('AuthController', () => {
     });
   });
 
-  // ─── getProfile ───────────────────────────────────────────────────────────
 
   describe('getProfile', () => {
     it('returns user from request', () => {
@@ -83,7 +82,6 @@ describe('AuthController', () => {
     });
   });
 
-  // ─── logout ───────────────────────────────────────────────────────────────
 
   describe('logout', () => {
     it('clears cookie and returns success message', () => {

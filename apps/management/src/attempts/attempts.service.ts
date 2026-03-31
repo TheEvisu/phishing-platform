@@ -48,7 +48,6 @@ export class AttemptsService {
     private orgService: OrganizationService,
   ) {}
 
-  // ─── SSE ──────────────────────────────────────────────────────────────────
 
   watchAttempts(user: UserCtx): Observable<MessageEvent> {
     const orgId = user.organizationId.toString();
@@ -70,7 +69,6 @@ export class AttemptsService {
     return merge(events$, heartbeat$);
   }
 
-  // ─── Internal (called by Simulation service) ───────────────────────────────
 
   async updateAttemptStatus(
     attemptId: string,
@@ -99,7 +97,6 @@ export class AttemptsService {
     return attempt;
   }
 
-  // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private buildFilter(user: UserCtx, extra: Record<string, unknown> = {}) {
     const f: Record<string, unknown> = { organizationId: user.organizationId, ...extra };
@@ -107,7 +104,6 @@ export class AttemptsService {
     return f;
   }
 
-  // ─── CRUD ─────────────────────────────────────────────────────────────────
 
   async getAllAttempts(user: UserCtx, page: number, limit: number, status?: AttemptStatus, email?: string) {
     const f = this.buildFilter(user);

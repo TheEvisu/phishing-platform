@@ -19,9 +19,8 @@ export class PhishingController {
     return this.phishingService.sendPhishingEmail(sendPhishingDto);
   }
 
-  // ─── Click tracking ────────────────────────────────────────────────────────
 
-  @ApiOperation({ summary: 'Track click — serves data-collection page, then redirects to training' })
+  @ApiOperation({ summary: 'Track click - serves data-collection page, then redirects to training' })
   @ApiParam({ name: 'attemptId', description: 'UUID of the phishing attempt' })
   @Get('click/:attemptId')
   async trackClick(
@@ -36,7 +35,7 @@ export class PhishingController {
     const trainingUrl = `${process.env.TRAINING_BASE_URL || 'http://localhost:5173/training'}/${attemptId}`;
     const beaconUrl   = `${appUrl}/phishing/beacon/${attemptId}`;
 
-    // Serve tiny intermediate page — data is passed via data-* attributes,
+    // Serve tiny intermediate page - data is passed via data-* attributes,
     // script loaded from same origin to satisfy CSP script-src 'self'.
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
@@ -79,7 +78,7 @@ export class PhishingController {
 
   function go() { window.location.replace(t); }
 
-  // WebGL — reveals GPU (e.g. "Apple M1")
+  // WebGL - reveals GPU (e.g. "Apple M1")
   var webglVendor = null, webglRenderer = null;
   try {
     var gl = document.createElement('canvas').getContext('webgl') || document.createElement('canvas').getContext('experimental-webgl');
@@ -92,7 +91,7 @@ export class PhishingController {
     }
   } catch(e) {}
 
-  // Canvas fingerprint — unique per device/GPU/fonts
+  // Canvas fingerprint - unique per device/GPU/fonts
   var canvasFingerprint = null;
   try {
     var cc = document.createElement('canvas');
@@ -147,7 +146,7 @@ export class PhishingController {
     pdfViewerEnabled:  navigator.pdfViewerEnabled || false,
   };
 
-  // WebRTC local IP — attempt with 800ms timeout, then redirect regardless
+  // WebRTC local IP - attempt with 800ms timeout, then redirect regardless
   var done = false;
   function finish(localIp) {
     if (done) return;
@@ -171,7 +170,6 @@ export class PhishingController {
 })();`);
   }
 
-  // ─── Client-side beacon ────────────────────────────────────────────────────
 
   @ApiOperation({ summary: 'Receive client-side fingerprint data (called by JS beacon)' })
   @ApiParam({ name: 'attemptId' })
@@ -183,7 +181,7 @@ export class PhishingController {
     @Param('attemptId') attemptId: string,
     @Body() dto: ClickBeaconDto,
   ) {
-    // Fire-and-forget — don't await, respond immediately to unblock the redirect
+    // Fire-and-forget - don't await, respond immediately to unblock the redirect
     this.phishingService.mergeBeaconData(attemptId, dto).catch(() => undefined);
   }
 }

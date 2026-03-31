@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Code Style
+
+Never use `// ─── Section Name ───` style section divider comments. Never use em-dash (`—`) in comments — use a regular hyphen (`-`) instead. Both patterns look AI-generated.
+
 ## Two Repositories
 
 This project consists of two sibling directories on the Desktop:

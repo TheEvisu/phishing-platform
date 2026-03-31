@@ -22,7 +22,6 @@ const mockRecipient = {
   createdBy: 'admin',
 };
 
-// ─── Model setup ─────────────────────────────────────────────────────────────
 
 const mockModel = {
   findOne:          jest.fn(),
@@ -41,7 +40,6 @@ function MockRecipientConstructor(dto: Record<string, unknown>) {
 }
 Object.assign(MockRecipientConstructor, mockModel);
 
-// ─── Suite ────────────────────────────────────────────────────────────────────
 
 describe('RecipientsService', () => {
   let service: RecipientsService;
@@ -59,7 +57,6 @@ describe('RecipientsService', () => {
 
   afterEach(() => jest.clearAllMocks());
 
-  // ── create ──────────────────────────────────────────────────────────────────
 
   describe('create', () => {
     const dto = { email: 'alice@company.com', firstName: 'Alice', lastName: 'Smith' };
@@ -80,7 +77,6 @@ describe('RecipientsService', () => {
     });
   });
 
-  // ── bulkImport ──────────────────────────────────────────────────────────────
 
   describe('bulkImport', () => {
     const dto = {
@@ -113,7 +109,6 @@ describe('RecipientsService', () => {
     });
   });
 
-  // ── findAll ─────────────────────────────────────────────────────────────────
 
   describe('findAll', () => {
     function setupFind(data: unknown[]) {
@@ -158,7 +153,6 @@ describe('RecipientsService', () => {
     });
   });
 
-  // ── findOne ─────────────────────────────────────────────────────────────────
 
   describe('findOne', () => {
     it('returns a recipient when found in same org', async () => {
@@ -179,7 +173,6 @@ describe('RecipientsService', () => {
     });
   });
 
-  // ── update ──────────────────────────────────────────────────────────────────
 
   describe('update', () => {
     it('updates and returns the recipient', async () => {
@@ -209,7 +202,6 @@ describe('RecipientsService', () => {
     });
   });
 
-  // ── remove ──────────────────────────────────────────────────────────────────
 
   describe('remove', () => {
     it('removes a recipient successfully', async () => {
@@ -227,7 +219,6 @@ describe('RecipientsService', () => {
     });
   });
 
-  // ── bulkDelete ──────────────────────────────────────────────────────────────
 
   describe('bulkDelete', () => {
     it('returns count of deleted recipients', async () => {
@@ -253,7 +244,6 @@ describe('RecipientsService', () => {
     });
   });
 
-  // ── getDepartments ──────────────────────────────────────────────────────────
 
   describe('getDepartments', () => {
     it('returns sorted distinct department list', async () => {

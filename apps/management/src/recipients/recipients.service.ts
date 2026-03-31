@@ -31,7 +31,6 @@ export class RecipientsService {
     if (user.role !== 'org_admin') throw new ForbiddenException('Admin access required');
   }
 
-  // ─── Create one ────────────────────────────────────────────────────────────
 
   async create(dto: CreateRecipientDto, user: UserCtx): Promise<Recipient> {
     this.requireAdmin(user);
@@ -50,7 +49,6 @@ export class RecipientsService {
     return recipient.save();
   }
 
-  // ─── Bulk import (upsert by email — idempotent) ───────────────────────────
 
   async bulkImport(
     dto: ImportRecipientsDto,
@@ -86,7 +84,6 @@ export class RecipientsService {
     };
   }
 
-  // ─── Paginated list ────────────────────────────────────────────────────────
 
   async findAll(query: RecipientQueryDto, user: UserCtx) {
     const { page = 1, limit = 10, search, department } = query;
@@ -112,7 +109,6 @@ export class RecipientsService {
     return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
-  // ─── Get one ───────────────────────────────────────────────────────────────
 
   async findOne(id: string, user: UserCtx): Promise<Recipient> {
     const recipient = await this.recipientModel.findById(id).lean().exec();
@@ -122,7 +118,6 @@ export class RecipientsService {
     return recipient as unknown as Recipient;
   }
 
-  // ─── Update ────────────────────────────────────────────────────────────────
 
   async update(id: string, dto: UpdateRecipientDto, user: UserCtx): Promise<Recipient> {
     this.requireAdmin(user);
@@ -150,7 +145,6 @@ export class RecipientsService {
     return updated as unknown as Recipient;
   }
 
-  // ─── Delete one ────────────────────────────────────────────────────────────
 
   async remove(id: string, user: UserCtx): Promise<void> {
     this.requireAdmin(user);
@@ -161,7 +155,6 @@ export class RecipientsService {
     if (!deleted) throw new NotFoundException('Recipient not found');
   }
 
-  // ─── Bulk delete ───────────────────────────────────────────────────────────
 
   async bulkDelete(dto: BulkDeleteRecipientsDto, user: UserCtx): Promise<{ deleted: number }> {
     this.requireAdmin(user);
@@ -174,7 +167,6 @@ export class RecipientsService {
     return { deleted: result.deletedCount };
   }
 
-  // ─── Distinct departments ──────────────────────────────────────────────────
 
   async getDepartments(user: UserCtx): Promise<string[]> {
     const result = await this.recipientModel

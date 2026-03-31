@@ -39,7 +39,7 @@ export class TrainingService {
       .lean()
       .exec();
 
-    // Silent no-op for unknown attemptIds — don't expose whether it exists
+    // Silent no-op for unknown attemptIds - don't expose whether it exists
     if (!attempt) return { alreadyViewed: false };
     if (attempt.trainingViewedAt) return { alreadyViewed: true };
 

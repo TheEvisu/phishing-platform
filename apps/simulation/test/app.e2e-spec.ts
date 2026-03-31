@@ -54,7 +54,6 @@ describe('Simulation Service (e2e)', () => {
     mockSendMail.mockResolvedValue({});
   });
 
-  // ─── Send phishing email ──────────────────────────────────────────────────────
 
   describe('POST /phishing/send', () => {
     const validDto = {
@@ -115,7 +114,6 @@ describe('Simulation Service (e2e)', () => {
     });
   });
 
-  // ─── Track click ─────────────────────────────────────────────────────────────
 
   describe('GET /phishing/click/:attemptId', () => {
     it('200: records click and serves CSP-safe intermediate redirect page', async () => {

@@ -10,7 +10,6 @@ import { SendPhishingDto, SmtpPayloadDto } from '../dto/send-phishing.dto';
 import { ClickBeaconDto } from '../dto/click-beacon.dto';
 import { AttemptStatus } from '@app/shared';
 
-// ─── Click metadata types ─────────────────────────────────────────────────────
 
 export interface ClickMetadata {
   // Server-side
@@ -47,7 +46,6 @@ export interface ClickMetadata {
   localIp?: string;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function extractIp(req: Request): string | undefined {
   const fwd = req.headers['x-forwarded-for'];
@@ -85,7 +83,6 @@ function parseUserAgent(ua: string): Pick<ClickMetadata, 'browser' | 'browserVer
   };
 }
 
-// ─── Service ──────────────────────────────────────────────────────────────────
 
 @Injectable()
 export class PhishingService {
@@ -123,7 +120,6 @@ export class PhishingService {
       : smtp.fromAddress;
   }
 
-  // ─── Send email ─────────────────────────────────────────────────────────────
 
   async sendPhishingEmail(sendPhishingDto: SendPhishingDto) {
     const { recipientEmail, subject, content, attemptId, smtp } = sendPhishingDto;
@@ -160,7 +156,6 @@ export class PhishingService {
     }
   }
 
-  // ─── Track click — extract server-side data immediately ───────────────────
 
   async trackClick(attemptId: string, req: Request): Promise<{ metadata: ClickMetadata }> {
     const clickedAt  = new Date();
@@ -189,7 +184,6 @@ export class PhishingService {
     return { metadata };
   }
 
-  // ─── Beacon — merge client-side data ──────────────────────────────────────
 
   async mergeBeaconData(attemptId: string, dto: ClickBeaconDto): Promise<void> {
     const clientData: Partial<ClickMetadata> = {
@@ -244,7 +238,6 @@ export class PhishingService {
     }
   }
 
-  // ─── Internal: notify management service ──────────────────────────────────
 
   private async notifyManagement(
     attemptId: string,

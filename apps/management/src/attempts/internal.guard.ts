@@ -3,7 +3,7 @@ import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 /**
  * Allows requests only from internal services.
  * Callers must send INTERNAL_SECRET in the X-Service-Key header.
- * In production the secret is required — requests are rejected if it is not configured.
+ * In production the secret is required - requests are rejected if it is not configured.
  * In development, requests pass when no secret is set (opt-in convenience).
  */
 @Injectable()

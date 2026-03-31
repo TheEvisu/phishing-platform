@@ -2,7 +2,7 @@ import { Controller, Get, Post, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TrainingService } from './training.service';
 
-// Public endpoints — no JwtAuthGuard.
+// Public endpoints - no JwtAuthGuard.
 // The attemptId is a UUID (128-bit entropy) which acts as an implicit capability token.
 @ApiTags('training')
 @Controller('training')

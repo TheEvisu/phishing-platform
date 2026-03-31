@@ -108,7 +108,7 @@ describe('PhishingService', () => {
 
       const result = await service.trackClick('nonexistent', mockReq);
 
-      // notifyManagement fires but we don't await it — result is still metadata object
+      // notifyManagement fires but we don't await it - result is still metadata object
       expect(result).toHaveProperty('metadata');
     });
   });

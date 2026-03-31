@@ -28,7 +28,6 @@ const mockAttempt = {
   save: jest.fn(),
 };
 
-// ─── Model mocks ─────────────────────────────────────────────────────────────
 
 const mockAttemptModel = {
   find: jest.fn(),
@@ -48,7 +47,6 @@ const mockOrgService = {
   getSmtpForSend: jest.fn().mockResolvedValue(null),
 };
 
-// ─── Suite ────────────────────────────────────────────────────────────────────
 
 describe('AttemptsService', () => {
   let service: AttemptsService;
@@ -66,7 +64,6 @@ describe('AttemptsService', () => {
     jest.clearAllMocks();
   });
 
-  // ─── getAllAttempts ────────────────────────────────────────────────────────
 
   describe('getAllAttempts', () => {
     function setupFind(results: any[]) {
@@ -128,7 +125,6 @@ describe('AttemptsService', () => {
     });
   });
 
-  // ─── createAttempt ────────────────────────────────────────────────────────
 
   describe('createAttempt', () => {
     it('saves attempt and calls simulation service', async () => {
@@ -159,7 +155,6 @@ describe('AttemptsService', () => {
     });
   });
 
-  // ─── getAttemptById ───────────────────────────────────────────────────────
 
   describe('getAttemptById', () => {
     it('returns attempt when found within user scope', async () => {
@@ -177,7 +172,6 @@ describe('AttemptsService', () => {
     });
   });
 
-  // ─── deleteAttempt ────────────────────────────────────────────────────────
 
   describe('deleteAttempt', () => {
     it('deletes attempt when found within user scope', async () => {
@@ -197,7 +191,6 @@ describe('AttemptsService', () => {
     });
   });
 
-  // ─── bulkDeleteAttempts ───────────────────────────────────────────────────
 
   describe('bulkDeleteAttempts', () => {
     it('calls deleteMany scoped to user org', async () => {
@@ -212,7 +205,6 @@ describe('AttemptsService', () => {
     });
   });
 
-  // ─── getStats ─────────────────────────────────────────────────────────────
 
   describe('getStats', () => {
     it('returns click rate of 0 when no sent or clicked', async () => {

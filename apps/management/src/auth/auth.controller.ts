@@ -19,7 +19,7 @@ const COOKIE_OPTIONS = {
   httpOnly: true,
   sameSite: 'strict' as const,
   secure: process.env.NODE_ENV === 'production',
-  maxAge: 24 * 60 * 60 * 1000, // 24h — matches JWT expiry
+  maxAge: 24 * 60 * 60 * 1000, // 24h - matches JWT expiry
 };
 
 @ApiTags('auth')
@@ -70,7 +70,7 @@ export class AuthController {
     return { user: result.user };
   }
 
-  @ApiOperation({ summary: 'Logout — clears the auth cookie' })
+  @ApiOperation({ summary: 'Logout - clears the auth cookie' })
   @ApiResponse({ status: 200, description: 'Logged out.' })
   @Post('logout')
   logout(@Res({ passthrough: true }) res: Response) {

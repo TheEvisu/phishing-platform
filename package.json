@@ -1,7 +1,7 @@
 {
-  "name": "phishing-platform",
+  "name": "overlook-platform",
   "version": "0.0.1",
-  "description": "NestJS monorepo for phishing simulation platform",
+  "description": "Overlook - Security Awareness Platform (NestJS monorepo)",
   "scripts": {
     "start:management": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register apps/management/src/main.ts",
     "start:simulation": "ts-node-dev --respawn --transpile-only -r tsconfig-paths/register apps/simulation/src/main.ts",

@@ -30,7 +30,7 @@ async function bootstrap() {
 
   if (process.env.NODE_ENV !== 'production') {
     const swaggerConfig = new DocumentBuilder()
-      .setTitle('Phishing Management API')
+      .setTitle('Overlook Management API')
       .setDescription('API for managing phishing simulation campaigns')
       .setVersion('1.0')
       .addBearerAuth()
@@ -44,7 +44,7 @@ async function bootstrap() {
   const port = process.env.PORT || 3001;
   await app.listen(port);
   const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);
-  logger.log(`phishing-management-service is running on port:${port}`, 'Bootstrap');
+  logger.log(`overlook-management-service is running on port:${port}`, 'Bootstrap');
   logger.log(`Swagger docs: http://localhost:${port}/api/docs`, 'Bootstrap');
 }
 

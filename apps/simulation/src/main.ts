@@ -25,7 +25,7 @@ async function bootstrap() {
   });
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Phishing Simulation API')
+    .setTitle('Overlook Simulation API')
     .setDescription('Internal API for sending phishing emails and tracking clicks')
     .setVersion('1.0')
     .build();
@@ -37,7 +37,7 @@ async function bootstrap() {
   const port = process.env.PORT || 3000;
   await app.listen(port);
   const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);
-  logger.log(`phishing-simulation-service is running on port:${port}`, 'Bootstrap');
+  logger.log(`overlook-simulation-service is running on port:${port}`, 'Bootstrap');
   logger.log(`Swagger docs: http://localhost:${port}/api/docs`, 'Bootstrap');
 }
 

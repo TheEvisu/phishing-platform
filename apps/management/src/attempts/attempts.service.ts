@@ -5,6 +5,7 @@ import { Observable, Subject, merge, interval } from 'rxjs';
 import { filter, map } from 'rxjs/operators';
 import axios from 'axios';
 import { PhishingAttempt } from '../schemas/phishing-attempt.schema';
+import { Campaign } from '../schemas/campaign.schema';
 import { CreatePhishingAttemptDto, BulkPhishingAttemptDto } from '../dto/phishing-attempt.dto';
 import { AttemptStatus } from '@app/shared';
 import { v4 as uuidv4 } from 'uuid';
@@ -39,6 +40,30 @@ interface UserCtx {
   organizationId: Types.ObjectId;
 }
 
+// Compute the $inc delta for Campaign.stats based on a status transition
+function campaignStatsDelta(
+  prevStatus: string,
+  nextStatus: AttemptStatus,
+): Record<string, number> | null {
+  if (nextStatus === AttemptStatus.SENT) {
+    return { 'stats.sent': 1 };
+  }
+  if (nextStatus === AttemptStatus.FAILED) {
+    return { 'stats.failed': 1 };
+  }
+  if (nextStatus === AttemptStatus.OPENED) {
+    // sent -> opened: remove from sent count (opened not tracked in campaign stats)
+    return { 'stats.sent': -1 };
+  }
+  if (nextStatus === AttemptStatus.CLICKED) {
+    const inc: Record<string, number> = { 'stats.clicked': 1 };
+    // if coming from sent, move it out of the sent counter
+    if (prevStatus === AttemptStatus.SENT) inc['stats.sent'] = -1;
+    return inc;
+  }
+  return null;
+}
+
 @Injectable()
 export class AttemptsService {
   private readonly statusBus$ = new Subject<StatusEvent>();
@@ -46,6 +71,8 @@ export class AttemptsService {
   constructor(
     @InjectModel(PhishingAttempt.name)
     private phishingAttemptModel: Model<PhishingAttempt>,
+    @InjectModel(Campaign.name)
+    private campaignModel: Model<Campaign>,
     private orgService: OrganizationService,
   ) {}
 
@@ -89,22 +116,31 @@ export class AttemptsService {
       query.status = AttemptStatus.SENT;
     }
 
-    const attempt = await this.phishingAttemptModel.findOneAndUpdate(
-      query, { $set }, { new: true },
+    // Fetch old doc so we can compute the correct campaign stats delta
+    const oldAttempt = await this.phishingAttemptModel.findOneAndUpdate(
+      query, { $set }, { new: false },
     );
 
-    if (attempt) {
+    if (oldAttempt) {
       this.statusBus$.next({
         attemptId, status,
-        organizationId: attempt.organizationId.toString(),
-        createdBy: attempt.createdBy,
-        email: attempt.email,
+        organizationId: oldAttempt.organizationId.toString(),
+        createdBy: oldAttempt.createdBy,
+        email: oldAttempt.email,
         clickedAt: clickedAt ? new Date(clickedAt) : undefined,
         openedAt: openedAt ? new Date(openedAt) : undefined,
       });
+
+      // Update denormalized campaign stats atomically
+      if (oldAttempt.campaignId) {
+        const inc = campaignStatsDelta(oldAttempt.status, status);
+        if (inc) {
+          await this.campaignModel.updateOne({ _id: oldAttempt.campaignId }, { $inc: inc });
+        }
+      }
     }
 
-    return attempt;
+    return oldAttempt;
   }
 
 
@@ -246,6 +282,19 @@ export class AttemptsService {
   async getAttemptById(id: string, user: UserCtx) {
     const attempt = await this.phishingAttemptModel.findOne({ _id: id, ...this.buildFilter(user) });
     if (!attempt) throw new NotFoundException('Phishing attempt not found');
+
+    // For campaign attempts, content lives on Campaign - fetch it if missing
+    if (!attempt.content && attempt.campaignId) {
+      const campaign = await this.campaignModel
+        .findById(attempt.campaignId)
+        .select('content')
+        .lean()
+        .exec();
+      if (campaign?.content) {
+        return { ...attempt.toObject(), content: campaign.content };
+      }
+    }
+
     return attempt;
   }
 

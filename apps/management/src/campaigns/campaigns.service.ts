@@ -42,8 +42,11 @@ export class CampaignsService {
   }
 
   async launch(dto: LaunchCampaignDto, user: UserCtx) {
+    // Subject and content stored once on Campaign, not duplicated per attempt
     const campaign = new this.campaignModel({
       name: dto.name,
+      subject: dto.subject,
+      content: dto.content,
       organizationId: user.organizationId,
       createdBy: user.username,
       totalEmails: dto.emails.length,
@@ -57,9 +60,12 @@ export class CampaignsService {
     const results = await Promise.all(
       dto.emails.map(async (email): Promise<EmailResult> => {
         const attemptId = uuidv4();
+        // content is omitted - lives on Campaign; subject kept for export/display
         const attempt = new this.attemptModel({
-          email, subject: dto.subject, content: dto.content,
-          attemptId, createdBy: user.username,
+          email,
+          subject: dto.subject,
+          attemptId,
+          createdBy: user.username,
           organizationId: user.organizationId,
           campaignId: campaign._id,
         });
@@ -75,6 +81,11 @@ export class CampaignsService {
         } catch (err: unknown) {
           attempt.status = AttemptStatus.FAILED;
           await attempt.save();
+          // Direct failure (network/timeout) - simulation never called back, update stats inline
+          await this.campaignModel.updateOne(
+            { _id: campaign._id },
+            { $inc: { 'stats.failed': 1 } },
+          );
           return { email, success: false, attemptId, error: sanitizeError(err) };
         }
       }),
@@ -86,30 +97,16 @@ export class CampaignsService {
   }
 
   async getAll(user: UserCtx) {
+    // Stats are denormalized onto Campaign - no aggregation needed
     const campaigns = await this.campaignModel
       .find(this.buildFilter(user))
+      .select('-content') // content can be large, skip in list view
       .sort({ createdAt: -1 })
       .lean()
       .exec();
 
-    if (!campaigns.length) return [];
-
-    const ids = campaigns.map((c) => c._id);
-    const stats = await this.attemptModel.aggregate([
-      { $match: { campaignId: { $in: ids } } },
-      {
-        $group: {
-          _id: '$campaignId',
-          sent:    { $sum: { $cond: [{ $eq: ['$status', AttemptStatus.SENT] },    1, 0] } },
-          clicked: { $sum: { $cond: [{ $eq: ['$status', AttemptStatus.CLICKED] }, 1, 0] } },
-          failed:  { $sum: { $cond: [{ $eq: ['$status', AttemptStatus.FAILED] },  1, 0] } },
-        },
-      },
-    ]);
-
-    const statsMap = new Map(stats.map((s) => [s._id.toString(), s]));
     return campaigns.map((c) => {
-      const s = statsMap.get((c._id as Types.ObjectId).toString()) ?? { sent: 0, clicked: 0, failed: 0 };
+      const s = c.stats ?? { sent: 0, clicked: 0, failed: 0 };
       const clickRate = s.sent + s.clicked > 0
         ? Math.round((s.clicked / (s.sent + s.clicked)) * 100)
         : 0;
@@ -133,7 +130,14 @@ export class CampaignsService {
       .lean()
       .exec();
 
-    return { ...campaign, attempts };
+    // Inject campaign content into attempts that don't store their own copy
+    const campaignContent = campaign.content;
+    const enrichedAttempts = attempts.map((a) => ({
+      ...a,
+      content: a.content ?? campaignContent,
+    }));
+
+    return { ...campaign, attempts: enrichedAttempts };
   }
 
   async delete(id: string, user: UserCtx) {

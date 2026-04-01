@@ -5,6 +5,7 @@ import { Types } from 'mongoose';
 import axios from 'axios';
 import { AttemptsService } from './attempts.service';
 import { PhishingAttempt } from '../schemas/phishing-attempt.schema';
+import { Campaign } from '../schemas/campaign.schema';
 import { AttemptStatus } from '@app/shared';
 import { OrganizationService } from '../organization/organization.service';
 
@@ -28,10 +29,17 @@ const mockAttempt = {
   save: jest.fn(),
 };
 
+// Build a chainable .lean().exec() stub returning the given value
+function leanExec(resolved: unknown) {
+  const exec = jest.fn().mockResolvedValue(resolved);
+  const lean = jest.fn().mockReturnValue({ exec });
+  return { lean, exec };
+}
 
 const mockAttemptModel = {
   find: jest.fn(),
   findOne: jest.fn(),
+  findOneAndUpdate: jest.fn(),
   findByIdAndDelete: jest.fn(),
   countDocuments: jest.fn(),
   deleteMany: jest.fn(),
@@ -42,6 +50,11 @@ function MockAttemptModelConstructor(dto: any) {
   return { ...mockAttempt, ...dto, save: jest.fn().mockResolvedValue(undefined) };
 }
 Object.assign(MockAttemptModelConstructor, mockAttemptModel);
+
+const mockCampaignModel = {
+  updateOne: jest.fn().mockResolvedValue({}),
+  findById: jest.fn(),
+};
 
 const mockOrgService = {
   getSmtpForSend: jest.fn().mockResolvedValue(null),
@@ -56,6 +69,7 @@ describe('AttemptsService', () => {
       providers: [
         AttemptsService,
         { provide: getModelToken(PhishingAttempt.name), useValue: MockAttemptModelConstructor },
+        { provide: getModelToken(Campaign.name), useValue: mockCampaignModel },
         { provide: OrganizationService, useValue: mockOrgService },
       ],
     }).compile();
@@ -78,9 +92,7 @@ describe('AttemptsService', () => {
 
     it('admin filter includes only organizationId', async () => {
       setupFind([mockAttempt]);
-
       await service.getAllAttempts(adminUser, 1, 10);
-
       expect(mockAttemptModel.find).toHaveBeenCalledWith(
         expect.not.objectContaining({ createdBy: expect.anything() }),
       );
@@ -91,9 +103,7 @@ describe('AttemptsService', () => {
 
     it('member filter includes organizationId + createdBy', async () => {
       setupFind([mockAttempt]);
-
       await service.getAllAttempts(memberUser, 1, 10);
-
       expect(mockAttemptModel.find).toHaveBeenCalledWith(
         expect.objectContaining({ organizationId: ORG_ID, createdBy: 'member' }),
       );
@@ -116,9 +126,7 @@ describe('AttemptsService', () => {
 
     it('applies status filter when provided', async () => {
       setupFind([]);
-
       await service.getAllAttempts(adminUser, 1, 10, AttemptStatus.SENT);
-
       expect(mockAttemptModel.find).toHaveBeenCalledWith(
         expect.objectContaining({ status: AttemptStatus.SENT }),
       );
@@ -169,6 +177,24 @@ describe('AttemptsService', () => {
       mockAttemptModel.findOne.mockResolvedValue(null);
 
       await expect(service.getAttemptById('nonexistent', memberUser)).rejects.toThrow(NotFoundException);
+    });
+
+    it('fetches content from campaign when attempt has none', async () => {
+      const campaignId = new Types.ObjectId();
+      const attemptDoc = {
+        ...mockAttempt,
+        content: undefined,
+        campaignId,
+        toObject: jest.fn().mockReturnValue({ ...mockAttempt, content: undefined, campaignId }),
+      };
+      mockAttemptModel.findOne.mockResolvedValue(attemptDoc);
+      mockCampaignModel.findById.mockReturnValue({
+        select: jest.fn().mockReturnValue(leanExec({ content: 'Campaign body' })),
+      });
+
+      const result = await service.getAttemptById('attempt-id-1', memberUser);
+
+      expect((result as any).content).toBe('Campaign body');
     });
   });
 
@@ -234,6 +260,61 @@ describe('AttemptsService', () => {
       // clicked=4, delivered=sent+opened+clicked=10, clickRate=4/10=40%
       expect(result.clickRate).toBe(40);
       expect(result.opened).toBe(1);
+    });
+  });
+
+
+  describe('updateAttemptStatus', () => {
+    it('increments stats.sent when transitioning to sent', async () => {
+      const campaignId = new Types.ObjectId();
+      mockAttemptModel.findOneAndUpdate.mockResolvedValue({
+        ...mockAttempt, status: AttemptStatus.PENDING, campaignId,
+      });
+
+      await service.updateAttemptStatus('uuid-1234', AttemptStatus.SENT);
+
+      expect(mockCampaignModel.updateOne).toHaveBeenCalledWith(
+        { _id: campaignId },
+        { $inc: { 'stats.sent': 1 } },
+      );
+    });
+
+    it('decrements sent and increments clicked when transitioning from sent to clicked', async () => {
+      const campaignId = new Types.ObjectId();
+      mockAttemptModel.findOneAndUpdate.mockResolvedValue({
+        ...mockAttempt, status: AttemptStatus.SENT, campaignId,
+      });
+
+      await service.updateAttemptStatus('uuid-1234', AttemptStatus.CLICKED);
+
+      expect(mockCampaignModel.updateOne).toHaveBeenCalledWith(
+        { _id: campaignId },
+        { $inc: { 'stats.sent': -1, 'stats.clicked': 1 } },
+      );
+    });
+
+    it('only increments clicked when transitioning from opened to clicked', async () => {
+      const campaignId = new Types.ObjectId();
+      mockAttemptModel.findOneAndUpdate.mockResolvedValue({
+        ...mockAttempt, status: AttemptStatus.OPENED, campaignId,
+      });
+
+      await service.updateAttemptStatus('uuid-1234', AttemptStatus.CLICKED);
+
+      expect(mockCampaignModel.updateOne).toHaveBeenCalledWith(
+        { _id: campaignId },
+        { $inc: { 'stats.clicked': 1 } },
+      );
+    });
+
+    it('does not update campaign stats when attempt has no campaignId', async () => {
+      mockAttemptModel.findOneAndUpdate.mockResolvedValue({
+        ...mockAttempt, status: AttemptStatus.PENDING, campaignId: undefined,
+      });
+
+      await service.updateAttemptStatus('uuid-1234', AttemptStatus.SENT);
+
+      expect(mockCampaignModel.updateOne).not.toHaveBeenCalled();
     });
   });
 });

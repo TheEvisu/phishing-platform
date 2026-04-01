@@ -13,6 +13,7 @@ import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterOrgDto, RegisterDto, LoginDto, ChangePasswordDto } from '../dto/auth.dto';
+import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 const COOKIE_OPTIONS = {
@@ -91,13 +92,26 @@ export class AuthController {
     return this.authService.changePassword(dto, req.user.username);
   }
 
-  @ApiOperation({ summary: 'Get current user profile' })
+  @ApiOperation({ summary: 'Get current user profile with preferences' })
   @ApiResponse({ status: 200, description: 'Returns the authenticated user.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Get('profile')
-  getProfile(@Request() req: { user: unknown }) {
-    return req.user;
+  getProfile(@Request() req: { user: { username: string } }) {
+    return this.authService.getProfile(req.user.username);
+  }
+
+  @ApiOperation({ summary: 'Save UI preferences (theme, language)' })
+  @ApiResponse({ status: 200, description: 'Preferences saved.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Patch('preferences')
+  updatePreferences(
+    @Body() dto: UpdatePreferencesDto,
+    @Request() req: { user: { username: string } },
+  ) {
+    return this.authService.updatePreferences(req.user.username, dto);
   }
 }

@@ -4,9 +4,11 @@ import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 
 const mockAuthService = {
-  registerOrg: jest.fn(),
-  register:    jest.fn(),
-  login:       jest.fn(),
+  registerOrg:       jest.fn(),
+  register:          jest.fn(),
+  login:             jest.fn(),
+  getProfile:        jest.fn(),
+  updatePreferences: jest.fn(),
 };
 
 const mockRes = { cookie: jest.fn(), clearCookie: jest.fn() };
@@ -73,11 +75,13 @@ describe('AuthController', () => {
 
 
   describe('getProfile', () => {
-    it('returns user from request', () => {
-      const req = { user: serviceResult.user };
+    it('delegates to authService.getProfile with username', async () => {
+      mockAuthService.getProfile.mockResolvedValue(serviceResult.user);
+      const req = { user: { username: 'testuser' } };
 
-      const result = controller.getProfile(req);
+      const result = await controller.getProfile(req);
 
+      expect(mockAuthService.getProfile).toHaveBeenCalledWith('testuser');
       expect(result).toEqual(serviceResult.user);
     });
   });

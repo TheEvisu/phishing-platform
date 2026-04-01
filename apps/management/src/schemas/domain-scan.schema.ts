@@ -37,3 +37,5 @@ export class DomainScan extends Document {
 
 export const DomainScanSchema = SchemaFactory.createForClass(DomainScan);
 DomainScanSchema.index({ organizationId: 1, createdAt: -1 });
+// Auto-expire completed scans after 90 days to keep the collection lean
+DomainScanSchema.index({ createdAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });

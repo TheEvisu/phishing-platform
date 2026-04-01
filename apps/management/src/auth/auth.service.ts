@@ -13,6 +13,7 @@ import { randomBytes } from 'crypto';
 import { User } from '../schemas/user.schema';
 import { Organization } from '../schemas/organization.schema';
 import { RegisterOrgDto, RegisterDto, LoginDto, ChangePasswordDto } from '../dto/auth.dto';
+import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 
 @Injectable()
 export class AuthService {
@@ -89,16 +90,46 @@ export class AuthService {
     return { message: 'Password updated successfully' };
   }
 
+  async getProfile(username: string) {
+    const user = await this.userModel.findOne({ username });
+    if (!user) return null;
+    const org = await this.orgModel.findById(user.organizationId);
+    return this.formatUser(user, org);
+  }
+
+  async updatePreferences(username: string, dto: UpdatePreferencesDto) {
+    const update: Record<string, unknown> = {};
+    if (dto.theme     !== undefined) update['preferences.theme']    = dto.theme;
+    if (dto.language  !== undefined) update['preferences.language'] = dto.language;
+
+    const user = await this.userModel.findOneAndUpdate(
+      { username },
+      { $set: update },
+      { new: true },
+    );
+    return user?.preferences ?? { theme: null, language: null };
+  }
+
   async validateUser(username: string) {
     const user = await this.userModel.findOne({ username });
     this.logger.debug(`validateUser: found=${!!user}`);
     if (!user) return null;
+    return {
+      username: user.username,
+      role: user.role,
+      organizationId: user.organizationId,
+    };
+  }
+
+  private formatUser(user: User, org: Organization | null) {
     return {
       id: user._id,
       username: user.username,
       email: user.email,
       role: user.role,
       organizationId: user.organizationId,
+      organizationName: org?.name ?? '',
+      preferences: user.preferences ?? { theme: null, language: null },
     };
   }
 
@@ -112,14 +143,7 @@ export class AuthService {
     const token = this.jwtService.sign(payload);
     return {
       access_token: token,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-        role: user.role,
-        organizationId: user.organizationId,
-        organizationName: org?.name ?? '',
-      },
+      user: this.formatUser(user, org),
     };
   }
 }

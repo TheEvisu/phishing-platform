@@ -3,6 +3,11 @@ import { Document, Types } from 'mongoose';
 
 export type UserRole = 'org_admin' | 'member';
 
+export interface UserPreferences {
+  theme: 'light' | 'dark' | 'system' | null;
+  language: string | null;
+}
+
 @Schema({ timestamps: true, versionKey: false })
 export class User extends Document {
   @Prop({ required: true, unique: true })
@@ -19,6 +24,12 @@ export class User extends Document {
 
   @Prop({ enum: ['org_admin', 'member'], default: 'member' })
   role!: UserRole;
+
+  @Prop({
+    type: { theme: { type: String }, language: { type: String } },
+    default: () => ({ theme: null, language: null }),
+  })
+  preferences!: UserPreferences;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

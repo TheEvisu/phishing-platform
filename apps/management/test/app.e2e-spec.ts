@@ -21,6 +21,7 @@ import { OrganizationService } from '../src/organization/organization.service';
 import { User } from '../src/schemas/user.schema';
 import { Organization } from '../src/schemas/organization.schema';
 import { PhishingAttempt } from '../src/schemas/phishing-attempt.schema';
+import { Campaign } from '../src/schemas/campaign.schema';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -109,6 +110,11 @@ describe('Management Service (e2e)', () => {
     getSmtpForSend: jest.fn().mockResolvedValue(null),
   };
 
+  const MockCampaignModel = Object.assign(
+    function () { return {}; },
+    { updateOne: jest.fn().mockResolvedValue({}) },
+  );
+
   beforeAll(async () => {
     hashedPassword = await bcrypt.hash('testpass123', 1);
     testUser.password = hashedPassword;
@@ -128,6 +134,7 @@ describe('Management Service (e2e)', () => {
         { provide: getModelToken(User.name), useValue: MockUserModel },
         { provide: getModelToken(Organization.name), useValue: MockOrgModel },
         { provide: getModelToken(PhishingAttempt.name), useValue: MockAttemptModel },
+        { provide: getModelToken(Campaign.name), useValue: MockCampaignModel },
         { provide: OrganizationService, useValue: mockOrgService },
       ],
     }).compile();

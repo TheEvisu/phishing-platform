@@ -10,8 +10,9 @@ export class PhishingAttempt extends Document {
   @Prop()
   subject!: string;
 
-  @Prop({ required: true })
-  content!: string;
+  // Optional for campaign attempts - content is stored once on the Campaign document
+  @Prop()
+  content?: string;
 
   @Prop({ default: AttemptStatus.PENDING, enum: Object.values(AttemptStatus) })
   status!: string;
@@ -45,5 +46,7 @@ export const PhishingAttemptSchema = SchemaFactory.createForClass(PhishingAttemp
 
 PhishingAttemptSchema.index({ organizationId: 1, createdAt: -1 });
 PhishingAttemptSchema.index({ organizationId: 1, createdBy: 1, createdAt: -1 });
-PhishingAttemptSchema.index({ campaignId: 1 });
 PhishingAttemptSchema.index({ organizationId: 1, status: 1 });
+PhishingAttemptSchema.index({ organizationId: 1, email: 1 });
+PhishingAttemptSchema.index({ campaignId: 1 });
+PhishingAttemptSchema.index({ campaignId: 1, status: 1 });

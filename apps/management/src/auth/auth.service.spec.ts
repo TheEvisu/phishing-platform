@@ -178,12 +178,12 @@ describe('AuthService', () => {
   });
 
   describe('validateUser', () => {
-    it('returns user without password', async () => {
+    it('returns user ctx without password', async () => {
       mockUserModel.findOne.mockResolvedValue(mockUser);
 
       const result = await service.validateUser('testuser');
 
-      expect(result).toMatchObject({ username: 'testuser', email: 'test@example.com' });
+      expect(result).toMatchObject({ username: 'testuser', role: 'member' });
       expect(result).not.toHaveProperty('password');
     });
 

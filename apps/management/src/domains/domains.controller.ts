@@ -1,5 +1,6 @@
 import { Controller, Post, Get, Body, Param, UseGuards, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { IsString, Matches } from 'class-validator';
 import { Types } from 'mongoose';
 import { DomainsService } from './domains.service';
@@ -27,6 +28,7 @@ export class DomainsController {
   constructor(private readonly domainsService: DomainsService) {}
 
   @ApiOperation({ summary: 'Start a lookalike domain scan (runs in background, returns scanId immediately)' })
+  @Throttle({ default: { limit: 3, ttl: 60_000 } })
   @Post('scan')
   scan(@Body() dto: ScanDomainDto, @Request() req: { user: UserCtx }) {
     return this.domainsService.scan(dto.domain, req.user.organizationId);

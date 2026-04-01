@@ -128,9 +128,19 @@ Endpoints (all under `JwtAuthGuard`):
 
 `requireAdmin(user)` helper throws ForbiddenException for non-admins. All queries are scoped by `organizationId` — members can read, only admins can mutate.
 
+### User preferences
+
+`User` schema has an embedded `preferences: { theme, language }` field (both nullable). Stored and synced via:
+- `GET /auth/profile` — queries DB fresh (not JWT payload), returns full user including preferences and `organizationName`.
+- `PATCH /auth/preferences` — partial update via `$set` with dot-notation paths (`preferences.theme`, `preferences.language`). Validated by `UpdatePreferencesDto` (allowed themes: `light|dark|system`; allowed languages: `en|ru|he|es|de|fr`).
+
 ### Campaigns
 
-`POST /campaigns/launch` creates a `Campaign` document and sends all emails concurrently. `GET /campaigns` returns each campaign with aggregated stats (`sent`, `clicked`, `failed`, `clickRate`) computed via MongoDB `$group` pipeline. `GET /campaigns/:id` returns the campaign plus all its attempts.
+`Campaign` schema stores `subject` and `content` directly — so email body is not duplicated across all attempt documents. `PhishingAttempt.content` is optional: campaign-based attempts omit it, ad-hoc attempts store it.
+
+`Campaign` also has an embedded `stats: { sent, clicked, failed }` doc (default all zeros). It is updated atomically via `$inc` on every status transition in `AttemptsService.updateAttemptStatus()` — the delta depends on the old status (fetched with `{ new: false }`) to correctly handle `sent→opened` (sent--), `sent→clicked` (sent--, clicked++), `opened→clicked` (clicked++ only). Direct network failures in `launch()` are incremented inline.
+
+`GET /campaigns` reads from the denormalized `stats` field — no `$group` aggregation. `clickRate` is computed in JS from `sent + clicked`. `GET /campaigns/:id` injects `campaign.content` into attempts that have none.
 
 ### Training after click
 
@@ -146,6 +156,7 @@ Management exposes two **public** endpoints (no auth — the UUID acts as a capa
 
 ```
 POST /attempts → status: pending → Simulation sends email → status: sent
+Recipient opens email → status: opened
 Recipient clicks /phishing/click/:id → status: clicked
 SMTP failure → status: failed
 ```
@@ -179,3 +190,11 @@ Unit specs sit next to source files (`*.spec.ts`). E2e specs are in `apps/*/test
 Covered service specs: `auth.service`, `attempts.service`, `templates.service`, `organization.service`, `jwt.strategy`.
 
 When adding tests for services that depend on `OrganizationService`, provide a mock: `{ provide: OrganizationService, useValue: { getSmtpForSend: jest.fn().mockResolvedValue(null) } }`.
+
+`AttemptsService` now also injects the `Campaign` model — include `{ provide: getModelToken(Campaign.name), useValue: { updateOne: jest.fn(), findById: jest.fn() } }` in test providers.
+
+### Indexes
+
+`PhishingAttempt`: `{ organizationId, createdAt }`, `{ organizationId, createdBy, createdAt }`, `{ organizationId, status }`, `{ organizationId, email }`, `{ campaignId }`, `{ campaignId, status }`.
+
+`DomainScan`: `{ organizationId, createdAt }` + TTL index on `createdAt` (expireAfterSeconds: 90 days) — completed scans are auto-expired.

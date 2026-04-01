@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { promises as dns } from 'dns';
@@ -21,9 +21,7 @@ const BIGRAM_SUBS: Record<string, string> = {
 };
 
 const TLDS = ['com', 'net', 'org', 'co', 'io', 'biz', 'info', 'online', 'site', 'app'];
-
 const PREFIXES = ['login', 'secure', 'mail', 'my', 'account', 'support', 'help', 'admin', 'auth'];
-
 const SUFFIXES = ['login', 'secure', 'official', 'online', 'support', 'help', 'inc', 'corp', 'hq'];
 
 function parseDomain(raw: string): { name: string; tld: string } {
@@ -33,7 +31,7 @@ function parseDomain(raw: string): { name: string; tld: string } {
   return { name, tld };
 }
 
-function generateLookalikes(targetDomain: string): Array<{ domain: string; technique: string }> {
+export function generateLookalikes(targetDomain: string): Array<{ domain: string; technique: string }> {
   const { name, tld } = parseDomain(targetDomain);
   const results = new Map<string, string>();
 
@@ -42,12 +40,10 @@ function generateLookalikes(targetDomain: string): Array<{ domain: string; techn
     if (d !== targetDomain && !results.has(d)) results.set(d, technique);
   };
 
-  // TLD variations
   for (const t of TLDS) {
     if (t !== tld) add(`${name}.${t}`, 'tld-swap');
   }
 
-  // Prefix / suffix
   for (const p of PREFIXES) {
     add(`${p}-${name}.${tld}`, 'prefix');
     add(`${p}${name}.${tld}`, 'prefix');
@@ -57,7 +53,6 @@ function generateLookalikes(targetDomain: string): Array<{ domain: string; techn
     add(`${name}${s}.${tld}`, 'suffix');
   }
 
-  // Homoglyph substitution
   for (let i = 0; i < name.length; i++) {
     const ch = name[i];
     const subs = HOMOGLYPHS[ch];
@@ -68,34 +63,24 @@ function generateLookalikes(targetDomain: string): Array<{ domain: string; techn
     }
   }
 
-  // Bigram substitution (rn -> m, etc.)
   for (const [bigram, sub] of Object.entries(BIGRAM_SUBS)) {
-    if (name.includes(bigram)) {
-      add(`${name.replace(bigram, sub)}.${tld}`, 'homoglyph');
-    }
-    // Reverse: m -> rn
-    if (name.includes(sub)) {
-      add(`${name.replace(sub, bigram)}.${tld}`, 'homoglyph');
-    }
+    if (name.includes(bigram)) add(`${name.replace(bigram, sub)}.${tld}`, 'homoglyph');
+    if (name.includes(sub))    add(`${name.replace(sub, bigram)}.${tld}`, 'homoglyph');
   }
 
-  // Transposition (swap adjacent chars)
   for (let i = 0; i < name.length - 1; i++) {
     const swapped = name.slice(0, i) + name[i + 1] + name[i] + name.slice(i + 2);
     if (swapped !== name) add(`${swapped}.${tld}`, 'transposition');
   }
 
-  // Missing character
   for (let i = 0; i < name.length; i++) {
     if (name.length > 2) add(`${name.slice(0, i)}${name.slice(i + 1)}.${tld}`, 'omission');
   }
 
-  // Double character
   for (let i = 0; i < name.length; i++) {
     add(`${name.slice(0, i)}${name[i]}${name[i]}${name.slice(i + 1)}.${tld}`, 'repetition');
   }
 
-  // Hyphenated split
   for (let i = 1; i < name.length - 1; i++) {
     add(`${name.slice(0, i)}-${name.slice(i)}.${tld}`, 'hyphenation');
   }
@@ -105,7 +90,10 @@ function generateLookalikes(targetDomain: string): Array<{ domain: string; techn
 
 async function checkDomain(domain: string): Promise<{ hasA: boolean; hasMx: boolean }> {
   const timeout = <T>(p: Promise<T>): Promise<T> =>
-    Promise.race([p, new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))]);
+    Promise.race([
+      p,
+      new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3_000)),
+    ]);
 
   const [hasA, hasMx] = await Promise.all([
     timeout(dns.resolve4(domain)).then(() => true).catch(() => false),
@@ -124,12 +112,33 @@ export class DomainsService {
     private domainScanModel: Model<DomainScan>,
   ) {}
 
-  async scan(targetDomain: string, organizationId: Types.ObjectId): Promise<DomainScan> {
-    const lookalikes = generateLookalikes(targetDomain);
-    this.logger.log(`Scanning ${lookalikes.length} lookalike domains for ${targetDomain}`);
+  async scan(targetDomain: string, organizationId: Types.ObjectId): Promise<{ scanId: string }> {
+    const doc = await this.domainScanModel.create({
+      organizationId,
+      targetDomain,
+      status: 'pending',
+      progress: 0,
+      results: [],
+      totalChecked: 0,
+      totalFound: 0,
+    });
 
-    const BATCH = 20;
+    const scanId = (doc._id as Types.ObjectId).toString();
+
+    // run in background - response returns immediately
+    this.runScan(scanId, targetDomain).catch((err: Error) =>
+      this.logger.error(`Scan ${scanId} failed: ${err.message}`),
+    );
+
+    return { scanId };
+  }
+
+  private async runScan(scanId: string, targetDomain: string): Promise<void> {
+    await this.domainScanModel.findByIdAndUpdate(scanId, { status: 'running' });
+
+    const lookalikes = generateLookalikes(targetDomain);
     const results: LookalikeDomain[] = [];
+    const BATCH = 20;
 
     for (let i = 0; i < lookalikes.length; i += BATCH) {
       const batch = lookalikes.slice(i, i + BATCH);
@@ -140,24 +149,35 @@ export class DomainsService {
         }),
       );
       results.push(...checked);
+
+      const progress = Math.min(Math.round(((i + BATCH) / lookalikes.length) * 100), 99);
+      await this.domainScanModel.findByIdAndUpdate(scanId, { progress });
     }
 
     const found = results.filter((r) => r.registered);
-
-    const scan = await this.domainScanModel.create({
-      organizationId,
-      targetDomain,
+    await this.domainScanModel.findByIdAndUpdate(scanId, {
+      status: 'completed',
+      progress: 100,
       results,
       totalChecked: results.length,
       totalFound: found.length,
     });
 
+    this.logger.log(`Scan ${scanId} completed: ${found.length}/${results.length} registered`);
+  }
+
+  async getScan(scanId: string, organizationId: Types.ObjectId): Promise<DomainScan> {
+    const scan = await this.domainScanModel
+      .findOne({ _id: scanId, organizationId })
+      .lean()
+      .exec();
+    if (!scan) throw new NotFoundException('Scan not found');
     return scan;
   }
 
   async getLatest(organizationId: Types.ObjectId): Promise<DomainScan | null> {
     return this.domainScanModel
-      .findOne({ organizationId })
+      .findOne({ organizationId, status: 'completed' })
       .sort({ createdAt: -1 })
       .lean()
       .exec();

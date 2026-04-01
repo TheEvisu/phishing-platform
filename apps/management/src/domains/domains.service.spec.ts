@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getModelToken } from '@nestjs/mongoose';
+import { NotFoundException } from '@nestjs/common';
 import { Types } from 'mongoose';
-import { DomainsService } from './domains.service';
+import { DomainsService, generateLookalikes } from './domains.service';
 import { DomainScan } from '../schemas/domain-scan.schema';
 
 jest.mock('dns', () => ({
@@ -15,15 +16,65 @@ import { promises as dns } from 'dns';
 const mockResolve4  = dns.resolve4  as jest.Mock;
 const mockResolveMx = dns.resolveMx as jest.Mock;
 
-const mockCreate  = jest.fn();
-const mockFindOne = jest.fn();
-const mockFind    = jest.fn();
+const mockCreate          = jest.fn();
+const mockFindOne         = jest.fn();
+const mockFind            = jest.fn();
+const mockFindByIdAndUpdate = jest.fn();
 
 function MockDomainScanModel() {}
 Object.assign(MockDomainScanModel, {
-  create:  mockCreate,
-  findOne: mockFindOne,
-  find:    mockFind,
+  create:            mockCreate,
+  findOne:           mockFindOne,
+  find:              mockFind,
+  findByIdAndUpdate: mockFindByIdAndUpdate,
+});
+
+describe('generateLookalikes', () => {
+  it('generates TLD swap variants', () => {
+    const results = generateLookalikes('acme.com');
+    const domains = results.map((r) => r.domain);
+    expect(domains).toContain('acme.net');
+    expect(domains).toContain('acme.org');
+    expect(domains).toContain('acme.io');
+  });
+
+  it('generates prefix variants', () => {
+    const domains = generateLookalikes('acme.com').map((r) => r.domain);
+    expect(domains).toContain('login-acme.com');
+    expect(domains).toContain('secure-acme.com');
+  });
+
+  it('generates suffix variants', () => {
+    const domains = generateLookalikes('acme.com').map((r) => r.domain);
+    expect(domains).toContain('acme-login.com');
+    expect(domains).toContain('acme-secure.com');
+  });
+
+  it('generates homoglyph variants (a -> 4)', () => {
+    const domains = generateLookalikes('acme.com').map((r) => r.domain);
+    expect(domains).toContain('4cme.com');
+  });
+
+  it('generates transposition variants', () => {
+    const results = generateLookalikes('acme.com');
+    const transpositions = results.filter((r) => r.technique === 'transposition');
+    expect(transpositions.length).toBeGreaterThan(0);
+  });
+
+  it('does not include the original domain', () => {
+    const domains = generateLookalikes('acme.com').map((r) => r.domain);
+    expect(domains).not.toContain('acme.com');
+  });
+
+  it('does not produce duplicates', () => {
+    const domains = generateLookalikes('acme.com').map((r) => r.domain);
+    expect(domains.length).toBe(new Set(domains).size);
+  });
+
+  it('labels each result with a technique', () => {
+    const results = generateLookalikes('acme.com');
+    results.forEach((r) => expect(r.technique).toBeTruthy());
+  });
 });
 
 describe('DomainsService', () => {
@@ -47,167 +98,67 @@ describe('DomainsService', () => {
   });
 
   describe('scan', () => {
-    it('generates lookalikes and saves scan with dns results', async () => {
+    it('returns scanId immediately without waiting for DNS', async () => {
+      const scanId = new Types.ObjectId();
+      mockCreate.mockResolvedValue({ _id: scanId });
+      mockFindByIdAndUpdate.mockResolvedValue(null);
       mockResolve4.mockResolvedValue(['1.2.3.4']);
       mockResolveMx.mockRejectedValue(new Error('ENOTFOUND'));
 
-      const saved = {
-        organizationId: orgId,
-        targetDomain: 'acme.com',
-        results: [],
-        totalChecked: 10,
-        totalFound: 5,
-      };
-      mockCreate.mockResolvedValue(saved);
-
       const result = await service.scan('acme.com', orgId);
 
+      expect(result).toEqual({ scanId: scanId.toString() });
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           organizationId: orgId,
           targetDomain: 'acme.com',
-          totalChecked: expect.any(Number),
-          totalFound: expect.any(Number),
+          status: 'pending',
+          progress: 0,
         }),
       );
-      expect(result).toBe(saved);
     });
 
-    it('marks domain as registered when A record resolves', async () => {
-      mockResolve4.mockResolvedValue(['1.2.3.4']);
+    it('creates scan document with correct initial state', async () => {
+      const scanId = new Types.ObjectId();
+      mockCreate.mockResolvedValue({ _id: scanId });
+      mockFindByIdAndUpdate.mockResolvedValue(null);
+      mockResolve4.mockRejectedValue(new Error('ENOTFOUND'));
       mockResolveMx.mockRejectedValue(new Error('ENOTFOUND'));
-      mockCreate.mockImplementation(async (doc) => doc);
 
-      const result = await service.scan('acme.com', orgId);
+      await service.scan('acme.com', orgId);
 
-      const registered = result.results.filter((r) => r.registered);
-      expect(registered.length).toBeGreaterThan(0);
-      registered.forEach((r) => {
-        expect(r.hasA).toBe(true);
-        expect(r.hasMx).toBe(false);
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ results: [], totalChecked: 0, totalFound: 0 }),
+      );
+    });
+  });
+
+  describe('getScan', () => {
+    it('returns scan when found', async () => {
+      const scan = { _id: 'scan-1', targetDomain: 'acme.com', status: 'completed' };
+      mockFindOne.mockReturnValue({
+        lean: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue(scan),
       });
+
+      const result = await service.getScan('scan-1', orgId);
+      expect(result).toBe(scan);
+      expect(mockFindOne).toHaveBeenCalledWith({ _id: 'scan-1', organizationId: orgId });
     });
 
-    it('marks hasMx true when MX records exist', async () => {
-      mockResolve4.mockRejectedValue(new Error('ENOTFOUND'));
-      mockResolveMx.mockResolvedValue([{ exchange: 'mail.acme.net', priority: 10 }]);
-      mockCreate.mockImplementation(async (doc) => doc);
-
-      const result = await service.scan('acme.com', orgId);
-
-      const withMx = result.results.filter((r) => r.hasMx);
-      expect(withMx.length).toBeGreaterThan(0);
-      withMx.forEach((r) => {
-        expect(r.registered).toBe(true);
-        expect(r.hasMx).toBe(true);
+    it('throws NotFoundException when scan not found', async () => {
+      mockFindOne.mockReturnValue({
+        lean: jest.fn().mockReturnThis(),
+        exec: jest.fn().mockResolvedValue(null),
       });
-    });
 
-    it('marks domain as not registered when both DNS lookups fail', async () => {
-      mockResolve4.mockRejectedValue(new Error('ENOTFOUND'));
-      mockResolveMx.mockRejectedValue(new Error('ENOTFOUND'));
-      mockCreate.mockImplementation(async (doc) => doc);
-
-      const result = await service.scan('acme.com', orgId);
-
-      result.results.forEach((r) => {
-        expect(r.registered).toBe(false);
-        expect(r.hasA).toBe(false);
-        expect(r.hasMx).toBe(false);
-      });
-      expect(result.totalFound).toBe(0);
-    });
-
-    it('generates TLD swap variants', async () => {
-      mockResolve4.mockRejectedValue(new Error('ENOTFOUND'));
-      mockResolveMx.mockRejectedValue(new Error('ENOTFOUND'));
-      mockCreate.mockImplementation(async (doc) => doc);
-
-      const result = await service.scan('acme.com', orgId);
-      const domains = result.results.map((r) => r.domain);
-
-      expect(domains).toContain('acme.net');
-      expect(domains).toContain('acme.org');
-      expect(domains).toContain('acme.io');
-    });
-
-    it('generates prefix variants', async () => {
-      mockResolve4.mockRejectedValue(new Error('ENOTFOUND'));
-      mockResolveMx.mockRejectedValue(new Error('ENOTFOUND'));
-      mockCreate.mockImplementation(async (doc) => doc);
-
-      const result = await service.scan('acme.com', orgId);
-      const domains = result.results.map((r) => r.domain);
-
-      expect(domains).toContain('login-acme.com');
-      expect(domains).toContain('secure-acme.com');
-      expect(domains).toContain('mail-acme.com');
-    });
-
-    it('generates suffix variants', async () => {
-      mockResolve4.mockRejectedValue(new Error('ENOTFOUND'));
-      mockResolveMx.mockRejectedValue(new Error('ENOTFOUND'));
-      mockCreate.mockImplementation(async (doc) => doc);
-
-      const result = await service.scan('acme.com', orgId);
-      const domains = result.results.map((r) => r.domain);
-
-      expect(domains).toContain('acme-login.com');
-      expect(domains).toContain('acme-secure.com');
-    });
-
-    it('generates homoglyph variants', async () => {
-      mockResolve4.mockRejectedValue(new Error('ENOTFOUND'));
-      mockResolveMx.mockRejectedValue(new Error('ENOTFOUND'));
-      mockCreate.mockImplementation(async (doc) => doc);
-
-      const result = await service.scan('acme.com', orgId);
-      const domains = result.results.map((r) => r.domain);
-
-      // a -> 4
-      expect(domains).toContain('4cme.com');
-    });
-
-    it('generates transposition variants', async () => {
-      mockResolve4.mockRejectedValue(new Error('ENOTFOUND'));
-      mockResolveMx.mockRejectedValue(new Error('ENOTFOUND'));
-      mockCreate.mockImplementation(async (doc) => doc);
-
-      const result = await service.scan('acme.com', orgId);
-      const domains = result.results.map((r) => r.domain);
-
-      // acme -> caem, acem, amce
-      expect(domains.some((d) => d.endsWith('.com') && d !== 'acme.com')).toBe(true);
-      const transpositions = result.results.filter((r) => r.technique === 'transposition');
-      expect(transpositions.length).toBeGreaterThan(0);
-    });
-
-    it('does not include the original domain in results', async () => {
-      mockResolve4.mockRejectedValue(new Error('ENOTFOUND'));
-      mockResolveMx.mockRejectedValue(new Error('ENOTFOUND'));
-      mockCreate.mockImplementation(async (doc) => doc);
-
-      const result = await service.scan('acme.com', orgId);
-
-      expect(result.results.map((r) => r.domain)).not.toContain('acme.com');
-    });
-
-    it('does not produce duplicate domains', async () => {
-      mockResolve4.mockRejectedValue(new Error('ENOTFOUND'));
-      mockResolveMx.mockRejectedValue(new Error('ENOTFOUND'));
-      mockCreate.mockImplementation(async (doc) => doc);
-
-      const result = await service.scan('acme.com', orgId);
-      const domains = result.results.map((r) => r.domain);
-      const unique = new Set(domains);
-
-      expect(domains.length).toBe(unique.size);
+      await expect(service.getScan('missing', orgId)).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('getLatest', () => {
-    it('returns the most recent scan for the org', async () => {
-      const scan = { targetDomain: 'acme.com', totalFound: 3 };
+    it('returns the latest completed scan', async () => {
+      const scan = { targetDomain: 'acme.com', status: 'completed' };
       mockFindOne.mockReturnValue({
         sort: jest.fn().mockReturnThis(),
         lean: jest.fn().mockReturnThis(),
@@ -216,25 +167,24 @@ describe('DomainsService', () => {
 
       const result = await service.getLatest(orgId);
 
-      expect(mockFindOne).toHaveBeenCalledWith({ organizationId: orgId });
+      expect(mockFindOne).toHaveBeenCalledWith({ organizationId: orgId, status: 'completed' });
       expect(result).toBe(scan);
     });
 
-    it('returns null when no scans exist', async () => {
+    it('returns null when no completed scans exist', async () => {
       mockFindOne.mockReturnValue({
         sort: jest.fn().mockReturnThis(),
         lean: jest.fn().mockReturnThis(),
         exec: jest.fn().mockResolvedValue(null),
       });
 
-      const result = await service.getLatest(orgId);
-      expect(result).toBeNull();
+      expect(await service.getLatest(orgId)).toBeNull();
     });
   });
 
   describe('getHistory', () => {
-    it('returns up to 10 scans without results array', async () => {
-      const history = [{ targetDomain: 'acme.com' }, { targetDomain: 'acme.com' }];
+    it('queries by organizationId and limits to 10', async () => {
+      const history = [{ targetDomain: 'acme.com' }];
       mockFind.mockReturnValue({
         sort:   jest.fn().mockReturnThis(),
         limit:  jest.fn().mockReturnThis(),

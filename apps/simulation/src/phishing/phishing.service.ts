@@ -132,11 +132,13 @@ export class PhishingService {
     const transporter = smtp ? this.buildTransporter(smtp) : this.fallbackTransporter;
 
     try {
-      const trackingUrl = `${process.env.APP_URL || 'http://localhost:3000'}/phishing/click/${attemptId}`;
+      const appUrl      = process.env.APP_URL || 'http://localhost:3000';
+      const trackingUrl = `${appUrl}/phishing/click/${attemptId}`;
+      const pixelUrl    = `${appUrl}/phishing/pixel/${attemptId}`;
       const emailContent = content.replace(
         '{{TRACKING_LINK}}',
         `<a href="${trackingUrl}">Click here to verify your account</a>`,
-      );
+      ) + `<img src="${pixelUrl}" width="1" height="1" style="display:none;border:0" alt="">`;
 
       await transporter.sendMail({
         from:    this.buildFromAddress(smtp),
@@ -153,6 +155,22 @@ export class PhishingService {
       throw error;
     } finally {
       if (smtp) transporter.close();
+    }
+  }
+
+
+  async trackOpen(attemptId: string): Promise<void> {
+    const openedAt = new Date();
+    // Only upgrade sent -> opened; don't downgrade from clicked
+    const attempt = await this.phishingAttemptModel.findOneAndUpdate(
+      { attemptId, status: AttemptStatus.SENT },
+      { status: AttemptStatus.OPENED, openedAt },
+      { new: true },
+    );
+    if (attempt) {
+      this.notifyManagement(attemptId, AttemptStatus.OPENED, undefined, undefined, openedAt).catch((err) => {
+        this.logger.warn(`Failed to notify management of open for ${attemptId}: ${err?.message}`);
+      });
     }
   }
 
@@ -244,6 +262,7 @@ export class PhishingService {
     status: AttemptStatus,
     clickedAt?: Date,
     clickMetadata?: ClickMetadata,
+    openedAt?: Date,
   ) {
     const managementUrl = process.env.MANAGEMENT_URL || 'http://localhost:3001';
     const secret        = process.env.INTERNAL_SECRET;
@@ -254,6 +273,7 @@ export class PhishingService {
         status,
         clickedAt:     clickedAt?.toISOString(),
         clickMetadata: clickMetadata ?? undefined,
+        openedAt:      openedAt?.toISOString(),
       },
       {
         timeout: 3_000,

@@ -30,6 +30,7 @@ interface StatusEvent {
   createdBy: string;
   email?: string;
   clickedAt?: Date;
+  openedAt?: Date;
 }
 
 interface UserCtx {
@@ -58,7 +59,7 @@ export class AttemptsService {
         (user.role === 'org_admin' || e.createdBy === user.username),
       ),
       map((e) => ({
-        data: { type: 'status_change', attemptId: e.attemptId, status: e.status, email: e.email, clickedAt: e.clickedAt },
+        data: { type: 'status_change', attemptId: e.attemptId, status: e.status, email: e.email, clickedAt: e.clickedAt, openedAt: e.openedAt },
       } as MessageEvent)),
     );
 
@@ -75,13 +76,21 @@ export class AttemptsService {
     status: AttemptStatus,
     clickedAt?: string,
     clickMetadata?: Record<string, unknown>,
+    openedAt?: string,
   ) {
     const $set: Record<string, unknown> = { status };
     if (clickedAt)     $set.clickedAt     = new Date(clickedAt);
     if (clickMetadata) $set.clickMetadata = clickMetadata;
+    if (openedAt)      $set.openedAt      = new Date(openedAt);
+
+    // opened must not overwrite clicked (clicked > opened in lifecycle)
+    const query: Record<string, unknown> = { attemptId };
+    if (status === AttemptStatus.OPENED) {
+      query.status = AttemptStatus.SENT;
+    }
 
     const attempt = await this.phishingAttemptModel.findOneAndUpdate(
-      { attemptId }, { $set }, { new: true },
+      query, { $set }, { new: true },
     );
 
     if (attempt) {
@@ -91,6 +100,7 @@ export class AttemptsService {
         createdBy: attempt.createdBy,
         email: attempt.email,
         clickedAt: clickedAt ? new Date(clickedAt) : undefined,
+        openedAt: openedAt ? new Date(openedAt) : undefined,
       });
     }
 
@@ -202,16 +212,16 @@ export class AttemptsService {
       { $sort: { '_id.date': 1 } },
     ]);
 
-    const map: Record<string, { sent: number; clicked: number; failed: number }> = {};
+    const map: Record<string, { sent: number; opened: number; clicked: number; failed: number }> = {};
     for (let i = 0; i < days; i++) {
       const d = new Date(since);
       d.setDate(since.getDate() + i);
-      map[d.toISOString().slice(0, 10)] = { sent: 0, clicked: 0, failed: 0 };
+      map[d.toISOString().slice(0, 10)] = { sent: 0, opened: 0, clicked: 0, failed: 0 };
     }
     for (const row of raw) {
       const { date, status } = row._id as { date: string; status: string };
-      if (map[date] && (status === 'sent' || status === 'clicked' || status === 'failed')) {
-        map[date][status as 'sent' | 'clicked' | 'failed'] += row.count as number;
+      if (map[date] && (status === 'sent' || status === 'opened' || status === 'clicked' || status === 'failed')) {
+        map[date][status as 'sent' | 'opened' | 'clicked' | 'failed'] += row.count as number;
       }
     }
 
@@ -220,14 +230,17 @@ export class AttemptsService {
 
   async getStats(user: UserCtx) {
     const f = this.buildFilter(user);
-    const [total, sent, clicked, failed] = await Promise.all([
+    const [total, sent, opened, clicked, failed] = await Promise.all([
       this.phishingAttemptModel.countDocuments(f),
       this.phishingAttemptModel.countDocuments({ ...f, status: AttemptStatus.SENT }),
+      this.phishingAttemptModel.countDocuments({ ...f, status: AttemptStatus.OPENED }),
       this.phishingAttemptModel.countDocuments({ ...f, status: AttemptStatus.CLICKED }),
       this.phishingAttemptModel.countDocuments({ ...f, status: AttemptStatus.FAILED }),
     ]);
-    const clickRate = sent + clicked > 0 ? Math.round((clicked / (sent + clicked)) * 100) : 0;
-    return { total, sent, clicked, failed, clickRate };
+    const deliveredCount = sent + opened + clicked;
+    const openRate  = deliveredCount > 0 ? Math.round(((opened + clicked) / deliveredCount) * 100) : 0;
+    const clickRate = deliveredCount > 0 ? Math.round((clicked / deliveredCount) * 100) : 0;
+    return { total, sent, opened, clicked, failed, openRate, clickRate };
   }
 
   async getAttemptById(id: string, user: UserCtx) {

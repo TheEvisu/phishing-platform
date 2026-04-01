@@ -73,6 +73,11 @@ export class UpdateAttemptStatusDto {
   @IsDateString()
   clickedAt?: string;
 
+  @ApiProperty({ required: false, example: '2026-03-28T10:00:00.000Z' })
+  @IsOptional()
+  @IsDateString()
+  openedAt?: string;
+
   @ApiProperty({ required: false, description: 'Click fingerprint data from Simulation service' })
   @IsOptional()
   @IsObject()

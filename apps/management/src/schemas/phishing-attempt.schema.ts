@@ -17,6 +17,9 @@ export class PhishingAttempt extends Document {
   status!: string;
 
   @Prop()
+  openedAt?: Date;
+
+  @Prop()
   clickedAt?: Date;
 
   @Prop({ required: true, unique: true })

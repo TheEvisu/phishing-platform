@@ -211,6 +211,7 @@ describe('AttemptsService', () => {
       mockAttemptModel.countDocuments
         .mockResolvedValueOnce(5)   // total
         .mockResolvedValueOnce(0)   // sent
+        .mockResolvedValueOnce(0)   // opened
         .mockResolvedValueOnce(0)   // clicked
         .mockResolvedValueOnce(5);  // failed
 
@@ -223,14 +224,16 @@ describe('AttemptsService', () => {
     it('computes click rate correctly', async () => {
       mockAttemptModel.countDocuments
         .mockResolvedValueOnce(10)  // total
-        .mockResolvedValueOnce(6)   // sent
+        .mockResolvedValueOnce(5)   // sent
+        .mockResolvedValueOnce(1)   // opened
         .mockResolvedValueOnce(4)   // clicked
         .mockResolvedValueOnce(0);  // failed
 
       const result = await service.getStats(adminUser);
 
-      // 4 / (6+4) = 40%
+      // clicked=4, delivered=sent+opened+clicked=10, clickRate=4/10=40%
       expect(result.clickRate).toBe(40);
+      expect(result.opened).toBe(1);
     });
   });
 });

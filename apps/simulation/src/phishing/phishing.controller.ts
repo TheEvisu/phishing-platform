@@ -171,6 +171,28 @@ export class PhishingController {
   }
 
 
+  @ApiOperation({ summary: 'Email open tracking pixel (1x1 transparent GIF)' })
+  @ApiParam({ name: 'attemptId' })
+  @Get('pixel/:attemptId')
+  async trackPixel(
+    @Param('attemptId') attemptId: string,
+    @Res() res: Response,
+  ) {
+    // Fire-and-forget - pixel loads in background; do not block response
+    this.phishingService.trackOpen(attemptId).catch(() => undefined);
+
+    // 1x1 transparent GIF (35 bytes)
+    const pixel = Buffer.from(
+      '47494638396101000100800000ffffff00000021f90401000000002c00000000010001000002024401003b',
+      'hex',
+    );
+    res.setHeader('Content-Type', 'image/gif');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.end(pixel);
+  }
+
+
   @ApiOperation({ summary: 'Receive client-side fingerprint data (called by JS beacon)' })
   @ApiParam({ name: 'attemptId' })
   @ApiResponse({ status: 204 })

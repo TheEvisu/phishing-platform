@@ -49,9 +49,7 @@ async function resolveCname(domain: string): Promise<string | undefined> {
   }
 }
 
-async function checkS3Bucket(domain: string): Promise<boolean> {
-  // Check if domain itself is an exposed S3 bucket
-  const bucketName = domain.replace(/\./g, '-');
+async function probeS3(bucketName: string): Promise<boolean> {
   try {
     const res = await axios.head(`https://${bucketName}.s3.amazonaws.com`, {
       timeout: 4_000,
@@ -62,6 +60,15 @@ async function checkS3Bucket(domain: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+async function checkS3Bucket(domain: string): Promise<boolean> {
+  // Try common bucket name variations: dots-as-dashes, dots-as-dots (subdomain style)
+  const withDashes = domain.replace(/\./g, '-');
+  // Subdomain-style bucket: only valid if no dots (already safe label)
+  const candidates = Array.from(new Set([withDashes, domain]));
+  const results = await Promise.all(candidates.map(probeS3));
+  return results.some(Boolean);
 }
 
 export async function scanCloud(domain: string): Promise<CloudResult> {

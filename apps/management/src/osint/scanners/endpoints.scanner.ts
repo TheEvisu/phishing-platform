@@ -1,29 +1,62 @@
 import axios from 'axios';
 import { EndpointsResult, SensitiveEndpoint } from '../../schemas/osint-scan.schema';
 
-const SENSITIVE_PATHS: Array<{ path: string; risk: string; note: string }> = [
-  { path: '/api',             risk: 'low',      note: 'API root - confirm auth is enforced and no unauthenticated endpoints are exposed' },
-  { path: '/api/v1',          risk: 'low',      note: 'Versioned API - check for deprecated endpoints that may lack modern auth controls' },
-  { path: '/api/v2',          risk: 'low',      note: 'Versioned API - check for deprecated endpoints that may lack modern auth controls' },
-  { path: '/graphql',         risk: 'medium',   note: 'GraphQL endpoint - introspection may expose full schema; disable in production' },
-  { path: '/swagger',         risk: 'medium',   note: 'Swagger UI exposes full API spec; should not be publicly accessible in production' },
-  { path: '/swagger-ui.html', risk: 'medium',   note: 'Swagger UI exposes full API spec; should not be publicly accessible in production' },
-  { path: '/openapi.json',    risk: 'medium',   note: 'OpenAPI spec exposed - reveals all endpoints, parameters, and data models' },
-  { path: '/api-docs',        risk: 'medium',   note: 'API documentation exposed - reveals endpoints and authentication requirements' },
-  { path: '/v1/api-docs',     risk: 'medium',   note: 'API documentation exposed - reveals endpoints and authentication requirements' },
+interface SensitivePath {
+  path: string;
+  risk: string;
+  note: string;
+  /**
+   * When a 200 is returned, the response body must match this pattern to count as a real
+   * finding. Prevents false positives from frameworks (Next.js, Nuxt, etc.) that serve a
+   * custom 404 page with HTTP 200 for any unknown path.
+   */
+  confirm?: RegExp;
+}
+
+const SENSITIVE_PATHS: SensitivePath[] = [
+  { path: '/api',             risk: 'low',      note: 'API root - confirm auth is enforced and no unauthenticated endpoints are exposed',
+                                                 confirm: /\"data\"|\"error\"|\"message\"|\"status\"|\"result\"|\"version\"/i },
+  { path: '/api/v1',          risk: 'low',      note: 'Versioned API - check for deprecated endpoints that may lack modern auth controls',
+                                                 confirm: /\"data\"|\"error\"|\"message\"|\"status\"|\"result\"|\"version\"/i },
+  { path: '/api/v2',          risk: 'low',      note: 'Versioned API - check for deprecated endpoints that may lack modern auth controls',
+                                                 confirm: /\"data\"|\"error\"|\"message\"|\"status\"|\"result\"|\"version\"/i },
+  { path: '/graphql',         risk: 'medium',   note: 'GraphQL endpoint - introspection may expose full schema; disable in production',
+                                                 confirm: /"data"|"errors"|"__schema"|graphql/i },
+  { path: '/swagger',         risk: 'medium',   note: 'Swagger UI exposes full API spec; should not be publicly accessible in production',
+                                                 confirm: /swagger|openapi|Swagger UI/i },
+  { path: '/swagger-ui.html', risk: 'medium',   note: 'Swagger UI exposes full API spec; should not be publicly accessible in production',
+                                                 confirm: /swagger|Swagger UI/i },
+  { path: '/openapi.json',    risk: 'medium',   note: 'OpenAPI spec exposed - reveals all endpoints, parameters, and data models',
+                                                 confirm: /"openapi"|"swagger"/i },
+  { path: '/api-docs',        risk: 'medium',   note: 'API documentation exposed - reveals endpoints and authentication requirements',
+                                                 confirm: /swagger|openapi|"paths"/i },
+  { path: '/v1/api-docs',     risk: 'medium',   note: 'API documentation exposed - reveals endpoints and authentication requirements',
+                                                 confirm: /swagger|openapi|"paths"/i },
   { path: '/admin',           risk: 'high',     note: 'Admin panel publicly reachable - should be behind VPN or IP allowlist' },
-  { path: '/wp-admin',        risk: 'high',     note: 'WordPress admin panel exposed - target for brute-force and credential stuffing attacks' },
-  { path: '/phpmyadmin',      risk: 'high',     note: 'phpMyAdmin exposes direct database access; remove or restrict to internal networks only' },
-  { path: '/.env',            risk: 'critical', note: 'Environment file leaked - may contain database passwords, API keys, and secrets' },
-  { path: '/config.json',     risk: 'critical', note: 'Configuration file exposed - may contain credentials, connection strings, or internal URLs' },
-  { path: '/health',          risk: 'low',      note: 'Health check endpoint - may reveal internal service versions or dependency status' },
-  { path: '/status',          risk: 'low',      note: 'Status endpoint - verify it does not expose internal infrastructure details' },
-  { path: '/metrics',         risk: 'medium',   note: 'Metrics endpoint (Prometheus/StatsD) - exposes performance data and internal service topology' },
-  { path: '/actuator',        risk: 'medium',   note: 'Spring Boot Actuator - can expose heap dumps, env vars, and bean definitions' },
-  { path: '/actuator/health', risk: 'low',      note: 'Spring Boot health check - verify sensitive details are not included in the response' },
-  { path: '/actuator/env',    risk: 'critical', note: 'Spring Boot env actuator - exposes all environment variables including secrets' },
-  { path: '/.git/HEAD',       risk: 'critical', note: 'Git repository exposed - full source code may be downloadable via /.git/ path traversal' },
-  { path: '/server-status',   risk: 'medium',   note: 'Apache server-status page - reveals active connections, request URIs, and worker info' },
+  { path: '/wp-admin',        risk: 'high',     note: 'WordPress admin panel exposed - target for brute-force and credential stuffing attacks',
+                                                 confirm: /wp-login|wp-content|WordPress|wp-includes/i },
+  { path: '/phpmyadmin',      risk: 'high',     note: 'phpMyAdmin exposes direct database access; remove or restrict to internal networks only',
+                                                 confirm: /phpMyAdmin|pma_/i },
+  { path: '/.env',            risk: 'critical', note: 'Environment file leaked - may contain database passwords, API keys, and secrets',
+                                                 confirm: /^[A-Z_][A-Z0-9_]*\s*=/m },
+  { path: '/config.json',     risk: 'critical', note: 'Configuration file exposed - may contain credentials, connection strings, or internal URLs',
+                                                 confirm: /^\s*\{/m },
+  { path: '/health',          risk: 'low',      note: 'Health check endpoint - may reveal internal service versions or dependency status',
+                                                 confirm: /"status"|"healthy"|"ok"|UP/i },
+  { path: '/status',          risk: 'low',      note: 'Status endpoint - verify it does not expose internal infrastructure details',
+                                                 confirm: /"status"|"version"|"uptime"|OK/i },
+  { path: '/metrics',         risk: 'medium',   note: 'Metrics endpoint (Prometheus/StatsD) - exposes performance data and internal service topology',
+                                                 confirm: /^# HELP|^# TYPE|process_cpu|http_requests/m },
+  { path: '/actuator',        risk: 'medium',   note: 'Spring Boot Actuator - can expose heap dumps, env vars, and bean definitions',
+                                                 confirm: /"_links"|actuator/i },
+  { path: '/actuator/health', risk: 'low',      note: 'Spring Boot health check - verify sensitive details are not included in the response',
+                                                 confirm: /"status"|"components"/i },
+  { path: '/actuator/env',    risk: 'critical', note: 'Spring Boot env actuator - exposes all environment variables including secrets',
+                                                 confirm: /"activeProfiles"|"propertySources"/i },
+  { path: '/.git/HEAD',       risk: 'critical', note: 'Git repository exposed - full source code may be downloadable via /.git/ path traversal',
+                                                 confirm: /^ref: refs\/|^[0-9a-f]{40}/m },
+  { path: '/server-status',   risk: 'medium',   note: 'Apache server-status page - reveals active connections, request URIs, and worker info',
+                                                 confirm: /Apache.*Status|Server Version|requests\/sec/i },
 ];
 
 const SENSITIVE_PATH_SET = new Set(SENSITIVE_PATHS.map((p) => p.path));
@@ -76,10 +109,9 @@ async function fetchPreview(url: string): Promise<string | undefined> {
 async function probeOne(
   baseUrl: string,
   host: string,
-  path: string,
-  risk: string,
-  note: string,
+  pathConfig: SensitivePath,
 ): Promise<SensitiveEndpoint | null> {
+  const { path, risk, note, confirm } = pathConfig;
   try {
     const res = await axios.head(`${baseUrl}${path}`, {
       timeout: 4_000,
@@ -92,12 +124,17 @@ async function probeOne(
     const redirectTo = status >= 300 && status < 400
       ? (res.headers['location'] ?? undefined)
       : undefined;
+
+    // For 200 responses on paths with a confirm pattern, fetch the body and verify
+    // the content actually matches the expected service - prevents false positives
+    // from frameworks (Next.js, Nuxt, etc.) that return HTTP 200 for unknown paths.
+    let responsePreview: string | undefined;
+    if (status === 200) {
+      responsePreview = await fetchPreview(`${baseUrl}${path}`);
+      if (confirm && !confirm.test(responsePreview ?? '')) return null;
+    }
+
     const effectiveRisk = computeEffectiveRisk(risk, status);
-
-    const responsePreview = status === 200
-      ? await fetchPreview(`${baseUrl}${path}`)
-      : undefined;
-
     return { host, path, status, redirectTo, risk, effectiveRisk, note, responsePreview };
   } catch {
     return null;
@@ -112,7 +149,7 @@ async function probeHost(host: string): Promise<SensitiveEndpoint[]> {
   for (let i = 0; i < SENSITIVE_PATHS.length; i += BATCH) {
     const batch = SENSITIVE_PATHS.slice(i, i + BATCH);
     const results = await Promise.all(
-      batch.map(({ path, risk, note }) => probeOne(baseUrl, host, path, risk, note)),
+      batch.map((pathConfig) => probeOne(baseUrl, host, pathConfig)),
     );
     found.push(...results.filter((r): r is SensitiveEndpoint => r !== null));
   }
@@ -129,13 +166,11 @@ async function probeRobotsPaths(host: string, robotsPaths: string[]): Promise<Se
 
   const results = await Promise.all(
     candidates.map((path) =>
-      probeOne(
-        baseUrl,
-        host,
+      probeOne(baseUrl, host, {
         path,
-        'medium',
-        'Path hidden from crawlers via robots.txt Disallow but publicly accessible',
-      ),
+        risk: 'medium',
+        note: 'Path hidden from crawlers via robots.txt Disallow but publicly accessible',
+      }),
     ),
   );
 

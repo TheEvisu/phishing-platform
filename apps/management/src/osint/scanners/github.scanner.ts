@@ -18,7 +18,7 @@ async function searchGithub(
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await axios.get('https://api.github.com/search/code', {
-    params: { q: query, per_page: 10 },
+    params: { q: query, per_page: 30 },
     headers,
     timeout: 10_000,
   });

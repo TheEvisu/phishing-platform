@@ -205,15 +205,24 @@ When adding tests for services that depend on `OrganizationService`, provide a m
 
 `POST /osint/scan` starts an async scan for a domain (throttled to 2/min). Returns `{ scanId }` immediately, then the client polls `GET /osint/:scanId` for progress (0-100) and results.
 
-Seven scanners run sequentially with progress updates:
-- **whois** (0-12%) - RDAP via `https://rdap.org/domain/<domain>`
-- **dns** (12-26%) - SPF/DMARC/MX/NS using Node's `dns.promises`
-- **subdomains** (26-46%) - certificate transparency via `crt.sh/?q=%.domain&output=json`, top 100 resolved with A-record check
-- **securityHeaders** (46-58%) - fetches domain homepage directly, checks 8 security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, COOP, CORP)
-- **techStack** (58-68%) - pattern matching against response headers, HTML, and cookies; 25 signatures across Web Server / CDN / Language / Framework / CMS / E-commerce / Analytics / Hosting categories
-- **wayback** (68-80%) - Wayback Machine CDX API for first/last seen dates and yearly snapshot breakdown
-- **githubExposure** (80-95%) - GitHub Search API for domain and email pattern exposure; uses `GITHUB_TOKEN` env var if present
+14 scanners run sequentially with progress updates:
+- **ssl** (0-6%) - Node.js `tls.connect()` with `rejectUnauthorized: false`; returns cert validity, expiry, issuer, SANs, protocol, selfSigned, wildcard
+- **whois** (6-11%) - RDAP via `https://rdap.org/domain/<domain>`
+- **dns** (11-18%) - SPF/DMARC/MX/NS using Node's `dns.promises`
+- **emailSecurity** (18-24%) - DKIM (14 common selectors), MTA-STS (DNS + policy file fetch), DNSSEC (Google DoH DS record check), BIMI (`default._bimi` TXT)
+- **subdomains** (24-36%) - certificate transparency via `crt.sh/?q=%.domain&output=json`, top 100 resolved with A-record check
+- **subdomainTakeover** (36-43%) - probes live subdomains for 16 known service fingerprints (GitHub Pages, Heroku, AWS S3/CloudFront, Fastly, Netlify, etc.); matches CNAME pattern first, then checks response body
+- **securityHeaders** (43-51%) - fetches domain homepage directly, checks 8 security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, COOP, CORP)
+- **techStack** (51-58%) - pattern matching against response headers, HTML, and cookies; 25 signatures across Web Server / CDN / Language / Framework / CMS / E-commerce / Analytics / Hosting categories
+- **wayback** (58-65%) - Wayback Machine CDX API for first/last seen dates and yearly snapshot breakdown
+- **githubExposure** (65-72%) - GitHub Search API (`per_page: 30`) for domain and email pattern exposure; uses `GITHUB_TOKEN` env var if present
+- **endpoints** (72-81%) - probes 22 sensitive paths + robots.txt disallowed paths; `SensitivePath.confirm?: RegExp` prevents false positives from Next.js (200 for all paths) and CDNs like Cloudflare (403 for all unknown paths) — confirm check runs for any status when present
+- **mobile** (81-87%) - Apple App Site Association, Android Asset Links, App Store/Play Store link detection
+- **cloud** (87-93%) - CNAME-based provider detection, ipinfo.io for IP/ASN/country, dual S3 bucket name probing (`dots-as-dashes` and raw domain)
+- **secrets** (93-100%) - fetches homepage HTML, extracts same-domain `<script src>` URLs, downloads up to 8 JS files (max 300KB each), scans with 11 regex patterns; redacts findings as `first4****last4`
 
-Scanner failures are soft - stored in `results.errors` dict, scan still completes. `GET /osint` returns history (last 10, no results array).
+Scanner failures are soft - stored in `results.errors` dict, scan still completes. Failed scanner names are shown in the frontend Overview tab. `GET /osint` returns history (last 10, no results array).
 
 Scanners live in `apps/management/src/osint/scanners/`. Each is a standalone async function - not an injectable service.
+
+Scanner specs exist for: `endpoints`, `cloud`, `mobile`, `email-security`, `subdomain-takeover`. `osint.service.spec.ts` mocks all 14 scanners.

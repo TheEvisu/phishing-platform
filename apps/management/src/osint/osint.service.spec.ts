@@ -24,9 +24,12 @@ const mockModel = {
   find: jest.fn(),
 };
 
+jest.mock('./scanners/ssl.scanner', () => ({ scanSsl: jest.fn().mockResolvedValue({ valid: true, sans: [], selfSigned: false, wildcard: false }) }));
 jest.mock('./scanners/whois.scanner', () => ({ scanWhois: jest.fn().mockResolvedValue({ registrar: 'Test', nameservers: [], status: [] }) }));
 jest.mock('./scanners/dns.scanner', () => ({ scanDns: jest.fn().mockResolvedValue({ spfValid: false, mxRecords: [], nameservers: [] }) }));
+jest.mock('./scanners/email-security.scanner', () => ({ scanEmailSecurity: jest.fn().mockResolvedValue({ dkim: [], dkimFound: false, mtaSts: false, dnssec: false, bimi: false }) }));
 jest.mock('./scanners/subdomains.scanner', () => ({ scanSubdomains: jest.fn().mockResolvedValue([]) }));
+jest.mock('./scanners/subdomain-takeover.scanner', () => ({ scanSubdomainTakeover: jest.fn().mockResolvedValue([]) }));
 jest.mock('./scanners/headers.scanner', () => ({ scanSecurityHeaders: jest.fn().mockResolvedValue({ headers: {}, passingCount: 0, totalChecked: 0 }) }));
 jest.mock('./scanners/tech.scanner', () => ({ scanTechStack: jest.fn().mockResolvedValue([]) }));
 jest.mock('./scanners/wayback.scanner', () => ({ scanWayback: jest.fn().mockResolvedValue({ totalSnapshots: 0, yearlyBreakdown: {} }) }));
@@ -34,6 +37,7 @@ jest.mock('./scanners/github.scanner', () => ({ scanGithubExposure: jest.fn().mo
 jest.mock('./scanners/endpoints.scanner', () => ({ scanEndpoints: jest.fn().mockResolvedValue({ robotsDisallowed: [], sitemapUrls: [], sensitiveEndpoints: [] }) }));
 jest.mock('./scanners/mobile.scanner', () => ({ scanMobile: jest.fn().mockResolvedValue({ apps: [], hasAppleAssociation: false, hasAndroidAssociation: false, appStoreLinksInHtml: [] }) }));
 jest.mock('./scanners/cloud.scanner', () => ({ scanCloud: jest.fn().mockResolvedValue({ s3BucketExposed: false }) }));
+jest.mock('./scanners/secrets.scanner', () => ({ scanSecrets: jest.fn().mockResolvedValue({ scannedFiles: 0, jsFiles: [], findings: [] }) }));
 
 describe('OsintService', () => {
   let service: OsintService;

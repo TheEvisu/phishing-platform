@@ -132,6 +132,27 @@ export interface SecretsResult {
   findings: SecretFinding[];
 }
 
+export interface DkimSelector {
+  selector: string;
+}
+
+export interface EmailSecurityResult {
+  dkim: DkimSelector[];
+  dkimFound: boolean;
+  mtaSts: boolean;
+  mtaStsMode?: 'enforce' | 'testing' | 'none';
+  dnssec: boolean;
+  bimi: boolean;
+  bimiUrl?: string;
+}
+
+export interface TakeoverEntry {
+  subdomain: string;
+  cname?: string;
+  service: string;
+  evidence: string;
+}
+
 export interface OsintResults {
   subdomains: SubdomainEntry[];
   dns: DnsSecurity | null;
@@ -145,6 +166,8 @@ export interface OsintResults {
   cloud: CloudResult | null;
   ssl: SslResult | null;
   secrets: SecretsResult | null;
+  emailSecurity: EmailSecurityResult | null;
+  takeoverRisks: TakeoverEntry[];
   errors: Record<string, string>;
 }
 

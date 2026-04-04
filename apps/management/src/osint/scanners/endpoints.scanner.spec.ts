@@ -46,29 +46,93 @@ describe('scanEndpoints', () => {
     ]);
   });
 
-  it('reports exposed sensitive endpoints with host field', async () => {
-    mockedAxios.get = jest.fn()
-      .mockResolvedValue({ status: 404, data: '' });
-
+  it('reports /.env when body matches key=value pattern', async () => {
+    const envContent = 'API_KEY=test\nDB_PASSWORD=secret';
+    mockedAxios.get = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('robots') || url.includes('sitemap')) return Promise.resolve({ status: 404, data: '' });
+      if (url.includes('/.env')) return Promise.resolve({ status: 200, data: envContent, headers: { 'content-type': 'text/plain' } });
+      return Promise.resolve({ status: 200, data: '{"data":null}', headers: { 'content-type': 'application/json' } });
+    });
     mockedAxios.head = jest.fn().mockImplementation((url: string) => {
-      if (url.includes('/.env'))    return Promise.resolve({ status: 200, headers: {} });
+      if (url.includes('/.env')) return Promise.resolve({ status: 200, headers: {} });
+      return Promise.resolve({ status: 404, headers: {} });
+    });
+
+    const result = await scanEndpoints('example.com');
+
+    const envEntry = result.sensitiveEndpoints.find((e) => e.path === '/.env');
+    expect(envEntry).toBeDefined();
+    expect(envEntry?.risk).toBe('critical');
+    expect(envEntry?.host).toBe('example.com');
+  });
+
+  it('reports /graphql when body contains GraphQL signature', async () => {
+    mockedAxios.get = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('robots') || url.includes('sitemap')) return Promise.resolve({ status: 404, data: '' });
+      if (url.includes('/graphql')) return Promise.resolve({ status: 200, data: '{"data":null,"errors":[]}', headers: { 'content-type': 'application/json' } });
+      return Promise.resolve({ status: 404, data: '' });
+    });
+    mockedAxios.head = jest.fn().mockImplementation((url: string) => {
       if (url.includes('/graphql')) return Promise.resolve({ status: 200, headers: {} });
       return Promise.resolve({ status: 404, headers: {} });
     });
 
     const result = await scanEndpoints('example.com');
 
-    expect(result.sensitiveEndpoints.some((e) => e.path === '/.env' && e.risk === 'critical')).toBe(true);
     expect(result.sensitiveEndpoints.some((e) => e.path === '/graphql')).toBe(true);
     expect(result.sensitiveEndpoints.every((e) => e.host === 'example.com')).toBe(true);
-    expect(result.sensitiveEndpoints.every((e) => e.status !== 404)).toBe(true);
+  });
+
+  it('does not report /.env when body does not match key=value pattern (false positive guard)', async () => {
+    mockedAxios.get = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('robots') || url.includes('sitemap')) return Promise.resolve({ status: 404, data: '' });
+      // Returns HTML (e.g. Next.js custom 404) — confirm should fail
+      return Promise.resolve({ status: 200, data: '<html><body>Not Found</body></html>', headers: { 'content-type': 'text/html' } });
+    });
+    mockedAxios.head = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('/.env')) return Promise.resolve({ status: 200, headers: {} });
+      return Promise.resolve({ status: 404, headers: {} });
+    });
+
+    const result = await scanEndpoints('example.com');
+
+    expect(result.sensitiveEndpoints.find((e) => e.path === '/.env')).toBeUndefined();
+  });
+
+  it('does not report /wp-admin when 403 body is CDN error HTML (Cloudflare false positive)', async () => {
+    mockedAxios.get = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('robots') || url.includes('sitemap')) return Promise.resolve({ status: 404, data: '' });
+      // CDN returns HTML error page — not WordPress content
+      return Promise.resolve({ status: 403, data: '<html><body>Access Denied</body></html>', headers: { 'content-type': 'text/html' } });
+    });
+    mockedAxios.head = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('/wp-admin')) return Promise.resolve({ status: 403, headers: {} });
+      return Promise.resolve({ status: 404, headers: {} });
+    });
+
+    const result = await scanEndpoints('example.com');
+
+    expect(result.sensitiveEndpoints.find((e) => e.path === '/wp-admin')).toBeUndefined();
+  });
+
+  it('reports /admin on 403 without confirm check (framework-agnostic path)', async () => {
+    mockedAxios.get = jest.fn().mockResolvedValue({ status: 404, data: '' });
+    mockedAxios.head = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('/admin')) return Promise.resolve({ status: 403, headers: {} });
+      return Promise.resolve({ status: 404, headers: {} });
+    });
+
+    const result = await scanEndpoints('example.com');
+
+    const adminEntry = result.sensitiveEndpoints.find((e) => e.path === '/admin');
+    expect(adminEntry).toBeDefined();
+    expect(adminEntry?.effectiveRisk).toBe('low'); // high downgraded 2 steps by 403
   });
 
   it('captures response preview for non-HTML 200 responses', async () => {
     const envContent = 'DB_HOST=localhost\nDB_PASSWORD=secret123\nAPI_KEY=abc';
     mockedAxios.get = jest.fn().mockImplementation((url: string) => {
       if (url.includes('robots.txt') || url.includes('sitemap')) return Promise.resolve({ status: 404, data: '' });
-      // preview GET for /.env
       return Promise.resolve({ status: 200, data: envContent, headers: { 'content-type': 'text/plain' } });
     });
     mockedAxios.head = jest.fn().mockImplementation((url: string) => {
@@ -82,7 +146,7 @@ describe('scanEndpoints', () => {
     expect(envEntry?.responsePreview).toBe(envContent);
   });
 
-  it('skips response preview when content-type is HTML', async () => {
+  it('skips response preview when content-type is HTML (no confirm path)', async () => {
     mockedAxios.get = jest.fn().mockImplementation((url: string) => {
       if (url.includes('robots.txt') || url.includes('sitemap')) return Promise.resolve({ status: 404, data: '' });
       return Promise.resolve({ status: 200, data: '<html><body>Admin</body></html>', headers: { 'content-type': 'text/html; charset=utf-8' } });
@@ -153,7 +217,12 @@ describe('scanEndpoints', () => {
   });
 
   it('probes live subdomains and tags findings with subdomain host', async () => {
-    mockedAxios.get = jest.fn().mockResolvedValue({ status: 404, data: '' });
+    mockedAxios.get = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('robots') || url.includes('sitemap')) return Promise.resolve({ status: 404, data: '' });
+      // /api on subdomain returns JSON response matching confirm pattern
+      if (url.includes('api.example.com/api')) return Promise.resolve({ status: 200, data: '{"message":"ok"}', headers: { 'content-type': 'application/json' } });
+      return Promise.resolve({ status: 404, data: '' });
+    });
     mockedAxios.head = jest.fn().mockImplementation((url: string) => {
       if (url === 'https://api.example.com/api') return Promise.resolve({ status: 200, headers: {} });
       return Promise.resolve({ status: 404, headers: {} });
@@ -173,8 +242,6 @@ describe('scanEndpoints', () => {
     const manySubdomains = Array.from({ length: 20 }, (_, i) => `sub${i}.example.com`);
     await scanEndpoints('example.com', manySubdomains);
 
-    // root domain + 10 subdomains = 11 hosts max, each with 22 paths
-    // Verify head was not called for sub10..sub19
     const calledUrls = (mockedAxios.head as jest.Mock).mock.calls.map((c) => c[0] as string);
     expect(calledUrls.some((u) => u.includes('sub10.example.com'))).toBe(false);
     expect(calledUrls.some((u) => u.includes('sub9.example.com'))).toBe(true);

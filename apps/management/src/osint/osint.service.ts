@@ -14,6 +14,8 @@ import { scanMobile } from './scanners/mobile.scanner';
 import { scanCloud } from './scanners/cloud.scanner';
 import { scanSsl } from './scanners/ssl.scanner';
 import { scanSecrets } from './scanners/secrets.scanner';
+import { scanEmailSecurity } from './scanners/email-security.scanner';
+import { scanSubdomainTakeover } from './scanners/subdomain-takeover.scanner';
 
 @Injectable()
 export class OsintService {
@@ -68,25 +70,39 @@ export class OsintService {
 
     try {
       const ssl = await run('ssl', () => scanSsl(domain), null);
-      await this.setProgress(scanId, 7);
+      await this.setProgress(scanId, 6);
 
       const whois = await run('whois', () => scanWhois(domain), null);
-      await this.setProgress(scanId, 14);
+      await this.setProgress(scanId, 11);
 
       const dns = await run('dns', () => scanDns(domain), null);
+      await this.setProgress(scanId, 18);
+
+      const emailSecurity = await run('emailSecurity', () => scanEmailSecurity(domain), null);
       await this.setProgress(scanId, 24);
 
       const subdomains = await run('subdomains', () => scanSubdomains(domain), []);
-      await this.setProgress(scanId, 38);
+      await this.setProgress(scanId, 36);
+
+      const liveSubdomains = (subdomains ?? [])
+        .filter((s) => s.hasA)
+        .map((s) => s.subdomain);
+
+      const takeoverRisks = await run(
+        'subdomainTakeover',
+        () => scanSubdomainTakeover(liveSubdomains),
+        [],
+      );
+      await this.setProgress(scanId, 43);
 
       const securityHeaders = await run('securityHeaders', () => scanSecurityHeaders(domain), null);
-      await this.setProgress(scanId, 48);
+      await this.setProgress(scanId, 51);
 
       const techStack = await run('techStack', () => scanTechStack(domain), []);
-      await this.setProgress(scanId, 56);
+      await this.setProgress(scanId, 58);
 
       const wayback = await run('wayback', () => scanWayback(domain), null);
-      await this.setProgress(scanId, 64);
+      await this.setProgress(scanId, 65);
 
       const githubExposure = await run(
         'githubExposure',
@@ -95,14 +111,11 @@ export class OsintService {
       );
       await this.setProgress(scanId, 72);
 
-      const liveSubdomains = (subdomains ?? [])
-        .filter((s) => s.hasA)
-        .map((s) => s.subdomain);
       const endpoints = await run('endpoints', () => scanEndpoints(domain, liveSubdomains), null);
-      await this.setProgress(scanId, 82);
+      await this.setProgress(scanId, 81);
 
       const mobile = await run('mobile', () => scanMobile(domain), null);
-      await this.setProgress(scanId, 88);
+      await this.setProgress(scanId, 87);
 
       const cloud = await run('cloud', () => scanCloud(domain), null);
       await this.setProgress(scanId, 93);
@@ -123,6 +136,8 @@ export class OsintService {
         cloud,
         ssl,
         secrets,
+        emailSecurity,
+        takeoverRisks,
         errors,
       };
 

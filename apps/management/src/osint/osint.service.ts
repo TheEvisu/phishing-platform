@@ -16,6 +16,7 @@ import { scanSsl } from './scanners/ssl.scanner';
 import { scanSecrets } from './scanners/secrets.scanner';
 import { scanEmailSecurity } from './scanners/email-security.scanner';
 import { scanSubdomainTakeover } from './scanners/subdomain-takeover.scanner';
+import { scanCors } from './scanners/cors.scanner';
 
 @Injectable()
 export class OsintService {
@@ -96,7 +97,10 @@ export class OsintService {
       await this.setProgress(scanId, 43);
 
       const securityHeaders = await run('securityHeaders', () => scanSecurityHeaders(domain), null);
-      await this.setProgress(scanId, 51);
+      await this.setProgress(scanId, 49);
+
+      const cors = await run('cors', () => scanCors(domain), null);
+      await this.setProgress(scanId, 55);
 
       const techStack = await run('techStack', () => scanTechStack(domain), []);
       await this.setProgress(scanId, 58);
@@ -138,6 +142,7 @@ export class OsintService {
         secrets,
         emailSecurity,
         takeoverRisks,
+        cors,
         errors,
       };
 

@@ -77,16 +77,18 @@ describe('scanMobile', () => {
     expect(app?.storeUrl).toBe('https://apps.apple.com/app/id1234');
   });
 
-  it('adds iTunes result as new app when not already in list from association', async () => {
+  it('does not add iOS apps from iTunes when AASA is not configured', async () => {
     mockedAxios.get = jest.fn()
-      .mockResolvedValueOnce({ status: 404, data: {} })                  // apple association
-      .mockResolvedValueOnce({ status: 404, data: [] })                  // assetlinks
+      .mockResolvedValueOnce({ status: 404, data: {} })                  // apple association - not found
+      .mockResolvedValueOnce({ status: 404, data: [] })                  // assetlinks - not found
       .mockResolvedValueOnce({ status: 200, data: '' })                  // homepage html
-      .mockResolvedValueOnce({ data: itunesResponse });                  // itunes
+      .mockResolvedValueOnce({ data: itunesResponse });                  // itunes returns a result
 
     const result = await scanMobile('example.com');
 
-    expect(result.apps.some((a) => a.appId === 'TEAMID.com.example.app' && a.name === 'Example App')).toBe(true);
+    // iTunes-only results must not be added - they are fuzzy name matches, not domain associations
+    expect(result.apps).toHaveLength(0);
+    expect(result.hasAppleAssociation).toBe(false);
   });
 
   it('extracts store links from homepage HTML', async () => {

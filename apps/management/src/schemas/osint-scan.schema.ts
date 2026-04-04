@@ -30,6 +30,7 @@ export interface SecurityHeadersResult {
   headers: Record<string, SecurityHeaderResult>;
   passingCount: number;
   totalChecked: number;
+  cspIssues: string[];
 }
 
 export interface TechEntry {
@@ -153,6 +154,20 @@ export interface TakeoverEntry {
   evidence: string;
 }
 
+export interface CorsIssue {
+  url: string;
+  allowOrigin: string;
+  allowCredentials: boolean;
+  issue: 'wildcard' | 'reflects-origin' | 'null-origin';
+  risk: 'critical' | 'high' | 'medium';
+}
+
+export interface CorsResult {
+  vulnerable: boolean;
+  issues: CorsIssue[];
+  checkedUrls: string[];
+}
+
 export interface OsintResults {
   subdomains: SubdomainEntry[];
   dns: DnsSecurity | null;
@@ -168,6 +183,7 @@ export interface OsintResults {
   secrets: SecretsResult | null;
   emailSecurity: EmailSecurityResult | null;
   takeoverRisks: TakeoverEntry[];
+  cors: CorsResult | null;
   errors: Record<string, string>;
 }
 

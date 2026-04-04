@@ -1,6 +1,30 @@
 import axios from 'axios';
 import { SecurityHeadersResult, SecurityHeaderResult } from '../../schemas/osint-scan.schema';
 
+function analyzeCsp(value: string): string[] {
+  const issues: string[] = [];
+
+  // Parse directives into a map
+  const directives: Record<string, string> = {};
+  for (const part of value.split(';')) {
+    const trimmed = part.trim();
+    const spaceIdx = trimmed.indexOf(' ');
+    if (spaceIdx === -1) continue;
+    const name = trimmed.slice(0, spaceIdx).toLowerCase();
+    directives[name] = trimmed.slice(spaceIdx + 1);
+  }
+
+  // script-src takes precedence over default-src for scripts
+  const scriptPolicy = directives['script-src'] ?? directives['default-src'] ?? '';
+
+  if (scriptPolicy.includes("'unsafe-inline'")) issues.push('unsafe-inline');
+  if (scriptPolicy.includes("'unsafe-eval'"))   issues.push('unsafe-eval');
+  if (/(?<![a-z0-9])\*(?![a-z0-9.])/.test(scriptPolicy)) issues.push('wildcard');
+  if (/\bhttp:/.test(scriptPolicy))             issues.push('http-scheme');
+
+  return issues;
+}
+
 const CHECKED_HEADERS: Array<{ name: string; evaluate: (value: string | undefined) => { pass: boolean; note?: string } }> = [
   {
     name: 'strict-transport-security',
@@ -85,7 +109,7 @@ export async function scanSecurityHeaders(domain: string): Promise<SecurityHeade
       );
     } catch {
       // Return empty result if site unreachable
-      return { headers: {}, passingCount: 0, totalChecked: 0 };
+      return { headers: {}, passingCount: 0, totalChecked: 0, cspIssues: [] };
     }
   }
 
@@ -99,5 +123,8 @@ export async function scanSecurityHeaders(domain: string): Promise<SecurityHeade
     if (pass) passingCount++;
   }
 
-  return { headers, passingCount, totalChecked: CHECKED_HEADERS.length };
+  const cspValue = headers['content-security-policy']?.value;
+  const cspIssues = cspValue ? analyzeCsp(cspValue) : [];
+
+  return { headers, passingCount, totalChecked: CHECKED_HEADERS.length, cspIssues };
 }

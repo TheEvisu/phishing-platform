@@ -89,12 +89,12 @@ function parseSitemap(content: string): string[] {
   return Array.from(matches, (m) => m[1]).slice(0, 50);
 }
 
-async function fetchPreview(url: string): Promise<string | undefined> {
+async function fetchPreview(url: string, anyStatus = false): Promise<string | undefined> {
   try {
     const res = await axios.get<string>(url, {
       timeout: 5_000,
       responseType: 'text',
-      validateStatus: (s) => s === 200,
+      validateStatus: (s) => anyStatus || s === 200,
       maxContentLength: PREVIEW_MAX_CHARS * 4,
     });
     const contentType = String(res.headers['content-type'] ?? '');
@@ -125,13 +125,17 @@ async function probeOne(
       ? (res.headers['location'] ?? undefined)
       : undefined;
 
-    // For 200 responses on paths with a confirm pattern, fetch the body and verify
-    // the content actually matches the expected service - prevents false positives
-    // from frameworks (Next.js, Nuxt, etc.) that return HTTP 200 for unknown paths.
+    // For paths with a confirm pattern, always fetch the body and verify content -
+    // prevents false positives from Next.js (200 for unknown paths) and CDNs like
+    // Cloudflare that return blanket 403 for all unknown paths.
+    // fetchPreview returns undefined for HTML responses, so a CDN/WAF error page
+    // (which is HTML) will never match a service-specific confirm pattern.
     let responsePreview: string | undefined;
-    if (status === 200) {
+    if (confirm) {
+      responsePreview = await fetchPreview(`${baseUrl}${path}`, status !== 200);
+      if (!confirm.test(responsePreview ?? '')) return null;
+    } else if (status === 200) {
       responsePreview = await fetchPreview(`${baseUrl}${path}`);
-      if (confirm && !confirm.test(responsePreview ?? '')) return null;
     }
 
     const effectiveRisk = computeEffectiveRisk(risk, status);

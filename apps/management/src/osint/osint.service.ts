@@ -12,6 +12,8 @@ import { scanGithubExposure } from './scanners/github.scanner';
 import { scanEndpoints } from './scanners/endpoints.scanner';
 import { scanMobile } from './scanners/mobile.scanner';
 import { scanCloud } from './scanners/cloud.scanner';
+import { scanSsl } from './scanners/ssl.scanner';
+import { scanSecrets } from './scanners/secrets.scanner';
 
 @Injectable()
 export class OsintService {
@@ -65,11 +67,14 @@ export class OsintService {
     };
 
     try {
+      const ssl = await run('ssl', () => scanSsl(domain), null);
+      await this.setProgress(scanId, 7);
+
       const whois = await run('whois', () => scanWhois(domain), null);
-      await this.setProgress(scanId, 10);
+      await this.setProgress(scanId, 14);
 
       const dns = await run('dns', () => scanDns(domain), null);
-      await this.setProgress(scanId, 22);
+      await this.setProgress(scanId, 24);
 
       const subdomains = await run('subdomains', () => scanSubdomains(domain), []);
       await this.setProgress(scanId, 38);
@@ -97,10 +102,13 @@ export class OsintService {
       await this.setProgress(scanId, 82);
 
       const mobile = await run('mobile', () => scanMobile(domain), null);
-      await this.setProgress(scanId, 90);
+      await this.setProgress(scanId, 88);
 
       const cloud = await run('cloud', () => scanCloud(domain), null);
-      await this.setProgress(scanId, 97);
+      await this.setProgress(scanId, 93);
+
+      const secrets = await run('secrets', () => scanSecrets(domain), null);
+      await this.setProgress(scanId, 100);
 
       const results: OsintResults = {
         subdomains,
@@ -113,6 +121,8 @@ export class OsintService {
         endpoints,
         mobile,
         cloud,
+        ssl,
+        secrets,
         errors,
       };
 

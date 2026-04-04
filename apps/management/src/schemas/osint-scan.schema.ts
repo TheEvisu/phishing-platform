@@ -107,6 +107,31 @@ export interface CloudResult {
   s3BucketExposed: boolean;
 }
 
+export interface SslResult {
+  valid: boolean;
+  expiresAt?: string;
+  issuedAt?: string;
+  daysUntilExpiry?: number;
+  issuer?: string;
+  subject?: string;
+  sans: string[];
+  protocol?: string;
+  selfSigned: boolean;
+  wildcard: boolean;
+}
+
+export interface SecretFinding {
+  file: string;
+  type: string;
+  preview: string;
+}
+
+export interface SecretsResult {
+  scannedFiles: number;
+  jsFiles: string[];
+  findings: SecretFinding[];
+}
+
 export interface OsintResults {
   subdomains: SubdomainEntry[];
   dns: DnsSecurity | null;
@@ -118,6 +143,8 @@ export interface OsintResults {
   endpoints: EndpointsResult | null;
   mobile: MobileResult | null;
   cloud: CloudResult | null;
+  ssl: SslResult | null;
+  secrets: SecretsResult | null;
   errors: Record<string, string>;
 }
 

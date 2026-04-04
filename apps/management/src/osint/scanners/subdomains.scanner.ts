@@ -52,22 +52,30 @@ async function bruteforceSubdomains(domain: string, known: Set<string>): Promise
 }
 
 export async function scanSubdomains(domain: string): Promise<SubdomainEntry[]> {
-  const res = await axios.get<CrtEntry[]>(
-    `https://crt.sh/?q=%.${domain}&output=json`,
-    { timeout: 30_000 },
-  );
-
   const seen = new Set<string>();
   const raw: Array<{ subdomain: string; firstSeen: string }> = [];
 
-  for (const entry of res.data) {
-    for (const name of entry.name_value.split('\n')) {
-      const sub = name.trim().toLowerCase().replace(/^\*\./, '');
-      if (!sub || sub === domain || seen.has(sub)) continue;
-      if (sub.startsWith('*')) continue;
-      seen.add(sub);
-      raw.push({ subdomain: sub, firstSeen: entry.not_before });
+  // crt.sh is a public service that can be slow, return HTML errors, or rate-limit.
+  // Treat failures as non-fatal - brute-force always runs regardless.
+  try {
+    const res = await axios.get<unknown>(
+      `https://crt.sh/?q=%.${domain}&output=json`,
+      { timeout: 15_000 },
+    );
+
+    if (Array.isArray(res.data)) {
+      for (const entry of res.data as CrtEntry[]) {
+        for (const name of entry.name_value.split('\n')) {
+          const sub = name.trim().toLowerCase().replace(/^\*\./, '');
+          if (!sub || sub === domain || seen.has(sub)) continue;
+          if (sub.startsWith('*')) continue;
+          seen.add(sub);
+          raw.push({ subdomain: sub, firstSeen: entry.not_before });
+        }
+      }
     }
+  } catch {
+    // crt.sh unavailable - proceed with brute-force only
   }
 
   // Sort by firstSeen descending, take top 100 to avoid excessive DNS lookups

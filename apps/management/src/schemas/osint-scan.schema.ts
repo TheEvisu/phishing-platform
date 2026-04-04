@@ -63,6 +63,7 @@ export interface WhoisResult {
 }
 
 export interface SensitiveEndpoint {
+  host: string;
   path: string;
   status: number;
   redirectTo?: string;

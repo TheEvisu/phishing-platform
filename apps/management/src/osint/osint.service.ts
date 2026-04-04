@@ -90,7 +90,10 @@ export class OsintService {
       );
       await this.setProgress(scanId, 72);
 
-      const endpoints = await run('endpoints', () => scanEndpoints(domain), null);
+      const liveSubdomains = (subdomains ?? [])
+        .filter((s) => s.hasA)
+        .map((s) => s.subdomain);
+      const endpoints = await run('endpoints', () => scanEndpoints(domain, liveSubdomains), null);
       await this.setProgress(scanId, 82);
 
       const mobile = await run('mobile', () => scanMobile(domain), null);

@@ -26,6 +26,9 @@ const SENSITIVE_PATHS = [
   { path: '/server-status',      risk: 'medium' },
 ] as const;
 
+// Max live subdomains to probe - keeps scan time reasonable
+const MAX_SUBDOMAIN_HOSTS = 10;
+
 function parseRobots(content: string): string[] {
   return content
     .split('\n')
@@ -40,7 +43,8 @@ function parseSitemap(content: string): string[] {
   return Array.from(matches, (m) => m[1]).slice(0, 50);
 }
 
-async function probeEndpoints(baseUrl: string): Promise<SensitiveEndpoint[]> {
+async function probeHost(host: string): Promise<SensitiveEndpoint[]> {
+  const baseUrl = `https://${host}`;
   const BATCH = 5;
   const found: SensitiveEndpoint[] = [];
 
@@ -59,7 +63,7 @@ async function probeEndpoints(baseUrl: string): Promise<SensitiveEndpoint[]> {
           const redirectTo = status >= 300 && status < 400
             ? (res.headers['location'] ?? undefined)
             : undefined;
-          return { path, status, redirectTo, risk } as SensitiveEndpoint;
+          return { host, path, status, redirectTo, risk } as SensitiveEndpoint;
         } catch {
           return null;
         }
@@ -71,7 +75,7 @@ async function probeEndpoints(baseUrl: string): Promise<SensitiveEndpoint[]> {
   return found;
 }
 
-export async function scanEndpoints(domain: string): Promise<EndpointsResult> {
+export async function scanEndpoints(domain: string, liveSubdomains: string[] = []): Promise<EndpointsResult> {
   const base = `https://${domain}`;
 
   const [robotsRes, sitemapRes] = await Promise.allSettled([
@@ -87,7 +91,10 @@ export async function scanEndpoints(domain: string): Promise<EndpointsResult> {
     ? parseSitemap(String(sitemapRes.value.data))
     : [];
 
-  const sensitiveEndpoints = await probeEndpoints(base);
+  // Probe root domain + top live subdomains
+  const hostsToProbe = [domain, ...liveSubdomains.slice(0, MAX_SUBDOMAIN_HOSTS)];
+  const allResults = await Promise.all(hostsToProbe.map((h) => probeHost(h)));
+  const sensitiveEndpoints = allResults.flat();
 
   return { robotsDisallowed, sitemapUrls, sensitiveEndpoints };
 }

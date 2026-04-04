@@ -67,7 +67,13 @@ export interface SensitiveEndpoint {
   path: string;
   status: number;
   redirectTo?: string;
+  /** Inherent risk of this path type */
   risk: string;
+  /** Actual risk after accounting for HTTP status (401/403 = protected = lower) */
+  effectiveRisk: string;
+  note: string;
+  /** First 2KB of response body for non-HTML 200 responses */
+  responsePreview?: string;
 }
 
 export interface EndpointsResult {

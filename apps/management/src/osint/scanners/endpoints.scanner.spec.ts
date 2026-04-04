@@ -64,6 +64,60 @@ describe('scanEndpoints', () => {
     expect(result.sensitiveEndpoints.every((e) => e.status !== 404)).toBe(true);
   });
 
+  it('captures response preview for non-HTML 200 responses', async () => {
+    const envContent = 'DB_HOST=localhost\nDB_PASSWORD=secret123\nAPI_KEY=abc';
+    mockedAxios.get = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('robots.txt') || url.includes('sitemap')) return Promise.resolve({ status: 404, data: '' });
+      // preview GET for /.env
+      return Promise.resolve({ status: 200, data: envContent, headers: { 'content-type': 'text/plain' } });
+    });
+    mockedAxios.head = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('/.env')) return Promise.resolve({ status: 200, headers: {} });
+      return Promise.resolve({ status: 404, headers: {} });
+    });
+
+    const result = await scanEndpoints('example.com');
+
+    const envEntry = result.sensitiveEndpoints.find((e) => e.path === '/.env');
+    expect(envEntry?.responsePreview).toBe(envContent);
+  });
+
+  it('skips response preview when content-type is HTML', async () => {
+    mockedAxios.get = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('robots.txt') || url.includes('sitemap')) return Promise.resolve({ status: 404, data: '' });
+      return Promise.resolve({ status: 200, data: '<html><body>Admin</body></html>', headers: { 'content-type': 'text/html; charset=utf-8' } });
+    });
+    mockedAxios.head = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('/admin')) return Promise.resolve({ status: 200, headers: {} });
+      return Promise.resolve({ status: 404, headers: {} });
+    });
+
+    const result = await scanEndpoints('example.com');
+
+    const adminEntry = result.sensitiveEndpoints.find((e) => e.path === '/admin');
+    expect(adminEntry).toBeDefined();
+    expect(adminEntry?.responsePreview).toBeUndefined();
+  });
+
+  it('probes robots.txt disallowed paths not in SENSITIVE_PATHS', async () => {
+    const robotsTxtContent = `User-agent: *\nDisallow: /internal-api\nDisallow: /secret-panel\n`;
+    mockedAxios.get = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('robots.txt')) return Promise.resolve({ status: 200, data: robotsTxtContent });
+      return Promise.resolve({ status: 404, data: '' });
+    });
+    mockedAxios.head = jest.fn().mockImplementation((url: string) => {
+      if (url.includes('/internal-api')) return Promise.resolve({ status: 200, headers: {} });
+      return Promise.resolve({ status: 404, headers: {} });
+    });
+
+    const result = await scanEndpoints('example.com');
+
+    const robotsEntry = result.sensitiveEndpoints.find((e) => e.path === '/internal-api');
+    expect(robotsEntry).toBeDefined();
+    expect(robotsEntry?.risk).toBe('medium');
+    expect(robotsEntry?.note).toContain('robots.txt');
+  });
+
   it('captures redirect target for 3xx responses', async () => {
     mockedAxios.get = jest.fn().mockResolvedValue({ status: 404, data: '' });
     mockedAxios.head = jest.fn().mockImplementation((url: string) => {

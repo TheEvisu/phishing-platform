@@ -7,6 +7,25 @@ interface CrtEntry {
   not_before: string;
 }
 
+// Common subdomain names to brute-force via DNS when not found in CT logs
+const WORDLIST = [
+  'www', 'www2', 'mail', 'smtp', 'pop', 'imap', 'webmail', 'email',
+  'api', 'api2', 'api3', 'v1', 'v2', 'v3',
+  'app', 'apps', 'web', 'portal', 'dashboard', 'console', 'panel', 'admin',
+  'dev', 'dev2', 'staging', 'stage', 'test', 'beta', 'alpha', 'qa', 'uat', 'sandbox', 'demo',
+  'cdn', 'static', 'assets', 'media', 'img', 'images', 'files', 'upload', 'download',
+  'docs', 'help', 'support', 'wiki', 'kb', 'blog', 'news', 'status', 'monitor',
+  'auth', 'login', 'sso', 'oauth', 'id', 'identity', 'account', 'accounts', 'profile',
+  'shop', 'store', 'checkout', 'payment', 'pay', 'billing', 'wallet',
+  'mobile', 'm', 'ios', 'android',
+  'vpn', 'remote', 'gateway', 'proxy',
+  'ftp', 'sftp', 'ssh',
+  'old', 'legacy', 'backup', 'archive',
+  'internal', 'intranet', 'corp', 'office',
+  'search', 'analytics', 'tracking', 'metrics',
+  'secure', 'security', 'vault',
+];
+
 async function resolveARecord(subdomain: string): Promise<string | undefined> {
   try {
     const records = await dns.resolve4(subdomain);
@@ -14,6 +33,22 @@ async function resolveARecord(subdomain: string): Promise<string | undefined> {
   } catch {
     return undefined;
   }
+}
+
+async function bruteforceSubdomains(domain: string, known: Set<string>): Promise<SubdomainEntry[]> {
+  const candidates = WORDLIST
+    .map((word) => `${word}.${domain}`)
+    .filter((sub) => !known.has(sub));
+
+  const results = await Promise.all(
+    candidates.map(async (subdomain) => {
+      const ip = await resolveARecord(subdomain);
+      if (!ip) return null;
+      return { subdomain, hasA: true, ip } as SubdomainEntry;
+    }),
+  );
+
+  return results.filter((r): r is SubdomainEntry => r !== null);
 }
 
 export async function scanSubdomains(domain: string): Promise<SubdomainEntry[]> {
@@ -29,7 +64,6 @@ export async function scanSubdomains(domain: string): Promise<SubdomainEntry[]> 
     for (const name of entry.name_value.split('\n')) {
       const sub = name.trim().toLowerCase().replace(/^\*\./, '');
       if (!sub || sub === domain || seen.has(sub)) continue;
-      // skip wildcard-only entries
       if (sub.startsWith('*')) continue;
       seen.add(sub);
       raw.push({ subdomain: sub, firstSeen: entry.not_before });
@@ -40,12 +74,24 @@ export async function scanSubdomains(domain: string): Promise<SubdomainEntry[]> 
   raw.sort((a, b) => b.firstSeen.localeCompare(a.firstSeen));
   const top = raw.slice(0, 100);
 
-  const results: SubdomainEntry[] = await Promise.all(
+  const ctResults: SubdomainEntry[] = await Promise.all(
     top.map(async ({ subdomain, firstSeen }) => {
       const ip = await resolveARecord(subdomain);
       return { subdomain, firstSeen, hasA: ip != null, ip };
     }),
   );
 
-  return results;
+  // Add brute-forced subdomains not already found via CT
+  const bruteResults = await bruteforceSubdomains(domain, seen);
+
+  // Merge: CT results first, then brute-forced extras
+  const all = [...ctResults, ...bruteResults];
+
+  // Stable sort: live first, then by subdomain name
+  all.sort((a, b) => {
+    if (a.hasA !== b.hasA) return a.hasA ? -1 : 1;
+    return a.subdomain.localeCompare(b.subdomain);
+  });
+
+  return all;
 }

@@ -197,4 +197,23 @@ When adding tests for services that depend on `OrganizationService`, provide a m
 
 `PhishingAttempt`: `{ organizationId, createdAt }`, `{ organizationId, createdBy, createdAt }`, `{ organizationId, status }`, `{ organizationId, email }`, `{ campaignId }`, `{ campaignId, status }`.
 
-`DomainScan`: `{ organizationId, createdAt }` + TTL index on `createdAt` (expireAfterSeconds: 90 days) — completed scans are auto-expired.
+`DomainScan`: `{ organizationId, createdAt }` + TTL index on `createdAt` (expireAfterSeconds: 90 days) - completed scans are auto-expired.
+
+`OsintScan`: same index pattern as `DomainScan`. TTL 90 days.
+
+### OSINT / Digital Footprint scanner
+
+`POST /osint/scan` starts an async scan for a domain (throttled to 2/min). Returns `{ scanId }` immediately, then the client polls `GET /osint/:scanId` for progress (0-100) and results.
+
+Seven scanners run sequentially with progress updates:
+- **whois** (0-12%) - RDAP via `https://rdap.org/domain/<domain>`
+- **dns** (12-26%) - SPF/DMARC/MX/NS using Node's `dns.promises`
+- **subdomains** (26-46%) - certificate transparency via `crt.sh/?q=%.domain&output=json`, top 100 resolved with A-record check
+- **securityHeaders** (46-58%) - fetches domain homepage directly, checks 8 security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, COOP, CORP)
+- **techStack** (58-68%) - pattern matching against response headers, HTML, and cookies; 25 signatures across Web Server / CDN / Language / Framework / CMS / E-commerce / Analytics / Hosting categories
+- **wayback** (68-80%) - Wayback Machine CDX API for first/last seen dates and yearly snapshot breakdown
+- **githubExposure** (80-95%) - GitHub Search API for domain and email pattern exposure; uses `GITHUB_TOKEN` env var if present
+
+Scanner failures are soft - stored in `results.errors` dict, scan still completes. `GET /osint` returns history (last 10, no results array).
+
+Scanners live in `apps/management/src/osint/scanners/`. Each is a standalone async function - not an injectable service.

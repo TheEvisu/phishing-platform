@@ -18,10 +18,13 @@ import { JwtStrategy } from '../src/auth/jwt.strategy';
 import { AttemptsController } from '../src/attempts/attempts.controller';
 import { AttemptsService } from '../src/attempts/attempts.service';
 import { OrganizationService } from '../src/organization/organization.service';
+import { OsintController } from '../src/osint/osint.controller';
+import { OsintService } from '../src/osint/osint.service';
 import { User } from '../src/schemas/user.schema';
 import { Organization } from '../src/schemas/organization.schema';
 import { PhishingAttempt } from '../src/schemas/phishing-attempt.schema';
 import { Campaign } from '../src/schemas/campaign.schema';
+import { OsintScan } from '../src/schemas/osint-scan.schema';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -115,6 +118,17 @@ describe('Management Service (e2e)', () => {
     { updateOne: jest.fn().mockResolvedValue({}) },
   );
 
+  const scanId = new Types.ObjectId().toString();
+
+  const mockOsintService = {
+    startScan: jest.fn().mockResolvedValue({ scanId }),
+    getScan: jest.fn(),
+    getLatest: jest.fn(),
+    getHistory: jest.fn().mockResolvedValue([]),
+  };
+
+  const MockOsintScanModel = Object.assign(function () { return {}; }, {});
+
   beforeAll(async () => {
     hashedPassword = await bcrypt.hash('testpass123', 1);
     testUser.password = hashedPassword;
@@ -126,7 +140,7 @@ describe('Management Service (e2e)', () => {
         JwtModule.register({ secret: JWT_SECRET, signOptions: { expiresIn: '24h' } }),
         ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
       ],
-      controllers: [AuthController, AttemptsController],
+      controllers: [AuthController, AttemptsController, OsintController],
       providers: [
         AuthService,
         AttemptsService,
@@ -135,7 +149,9 @@ describe('Management Service (e2e)', () => {
         { provide: getModelToken(Organization.name), useValue: MockOrgModel },
         { provide: getModelToken(PhishingAttempt.name), useValue: MockAttemptModel },
         { provide: getModelToken(Campaign.name), useValue: MockCampaignModel },
+        { provide: getModelToken(OsintScan.name), useValue: MockOsintScanModel },
         { provide: OrganizationService, useValue: mockOrgService },
+        { provide: OsintService, useValue: mockOsintService },
       ],
     }).compile();
 
@@ -166,6 +182,8 @@ describe('Management Service (e2e)', () => {
     mockOrgService.getSmtpForSend.mockResolvedValue(null);
     mockAttemptCountDocuments.mockResolvedValue(0);
     mockAttemptFindByIdAndUpdate.mockResolvedValue(null);
+    mockOsintService.startScan.mockResolvedValue({ scanId });
+    mockOsintService.getHistory.mockResolvedValue([]);
   });
 
   describe('POST /auth/register-org', () => {
@@ -469,6 +487,142 @@ describe('Management Service (e2e)', () => {
 
     it('401: no cookie', async () => {
       await request(app.getHttpServer()).delete('/attempts/attempt-id-1').expect(401);
+    });
+  });
+
+  describe('POST /osint/scan', () => {
+    it('201: starts scan and returns scanId', async () => {
+      mockUserFindOne.mockResolvedValue({ ...testUser });
+
+      const res = await request(app.getHttpServer())
+        .post('/osint/scan')
+        .set('Cookie', authCookie)
+        .send({ domain: 'example.com' })
+        .expect(201);
+
+      expect(res.body).toHaveProperty('scanId');
+      expect(mockOsintService.startScan).toHaveBeenCalledWith('example.com', orgId);
+    });
+
+    it('400: invalid domain format', async () => {
+      mockUserFindOne.mockResolvedValue({ ...testUser });
+
+      await request(app.getHttpServer())
+        .post('/osint/scan')
+        .set('Cookie', authCookie)
+        .send({ domain: 'not a domain' })
+        .expect(400);
+    });
+
+    it('400: missing domain field', async () => {
+      mockUserFindOne.mockResolvedValue({ ...testUser });
+
+      await request(app.getHttpServer())
+        .post('/osint/scan')
+        .set('Cookie', authCookie)
+        .send({})
+        .expect(400);
+    });
+
+    it('401: no cookie', async () => {
+      await request(app.getHttpServer())
+        .post('/osint/scan')
+        .send({ domain: 'example.com' })
+        .expect(401);
+    });
+  });
+
+  describe('GET /osint/results/latest', () => {
+    it('200: returns latest completed scan', async () => {
+      mockUserFindOne.mockResolvedValue({ ...testUser });
+      const latestScan = { _id: scanId, targetDomain: 'example.com', status: 'completed', progress: 100, results: {} };
+      mockOsintService.getLatest.mockResolvedValue(latestScan);
+
+      const res = await request(app.getHttpServer())
+        .get('/osint/results/latest')
+        .set('Cookie', authCookie)
+        .expect(200);
+
+      expect(res.body).toMatchObject({ targetDomain: 'example.com', status: 'completed' });
+    });
+
+    it('200: returns empty when no completed scan exists', async () => {
+      mockUserFindOne.mockResolvedValue({ ...testUser });
+      mockOsintService.getLatest.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .get('/osint/results/latest')
+        .set('Cookie', authCookie)
+        .expect(200);
+
+      expect(mockOsintService.getLatest).toHaveBeenCalledWith(orgId);
+    });
+
+    it('401: no cookie', async () => {
+      await request(app.getHttpServer()).get('/osint/results/latest').expect(401);
+    });
+  });
+
+  describe('GET /osint/:scanId', () => {
+    it('200: returns scan by ID', async () => {
+      mockUserFindOne.mockResolvedValue({ ...testUser });
+      const scanDoc = { _id: scanId, targetDomain: 'example.com', status: 'running', progress: 50 };
+      mockOsintService.getScan.mockResolvedValue(scanDoc);
+
+      const res = await request(app.getHttpServer())
+        .get(`/osint/${scanId}`)
+        .set('Cookie', authCookie)
+        .expect(200);
+
+      expect(res.body).toMatchObject({ status: 'running', progress: 50 });
+    });
+
+    it('404: scan not found', async () => {
+      mockUserFindOne.mockResolvedValue({ ...testUser });
+      const { NotFoundException } = await import('@nestjs/common');
+      mockOsintService.getScan.mockRejectedValue(new NotFoundException());
+
+      await request(app.getHttpServer())
+        .get('/osint/nonexistent-scan-id')
+        .set('Cookie', authCookie)
+        .expect(404);
+    });
+
+    it('401: no cookie', async () => {
+      await request(app.getHttpServer()).get(`/osint/${scanId}`).expect(401);
+    });
+  });
+
+  describe('GET /osint', () => {
+    it('200: returns scan history', async () => {
+      mockUserFindOne.mockResolvedValue({ ...testUser });
+      const history = [
+        { _id: scanId, targetDomain: 'example.com', status: 'completed', progress: 100 },
+      ];
+      mockOsintService.getHistory.mockResolvedValue(history);
+
+      const res = await request(app.getHttpServer())
+        .get('/osint')
+        .set('Cookie', authCookie)
+        .expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body[0]).toMatchObject({ targetDomain: 'example.com' });
+    });
+
+    it('200: returns empty array when no history', async () => {
+      mockUserFindOne.mockResolvedValue({ ...testUser });
+
+      const res = await request(app.getHttpServer())
+        .get('/osint')
+        .set('Cookie', authCookie)
+        .expect(200);
+
+      expect(res.body).toEqual([]);
+    });
+
+    it('401: no cookie', async () => {
+      await request(app.getHttpServer()).get('/osint').expect(401);
     });
   });
 });

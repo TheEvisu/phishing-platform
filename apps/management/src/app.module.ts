@@ -13,6 +13,7 @@ import { CampaignsModule } from './campaigns/campaigns.module';
 import { RecipientsModule } from './recipients/recipients.module';
 import { TrainingModule } from './training/training.module';
 import { DomainsModule } from './domains/domains.module';
+import { OsintModule } from './osint/osint.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { HealthController } from './health/health.controller';
@@ -41,6 +42,7 @@ import { createLoggerConfig } from '@app/shared';
     RecipientsModule,
     TrainingModule,
     DomainsModule,
+    OsintModule,
   ],
   controllers: [AppController, HealthController],
   providers: [

@@ -77,18 +77,33 @@ describe('scanMobile', () => {
     expect(app?.storeUrl).toBe('https://apps.apple.com/app/id1234');
   });
 
-  it('does not add iOS apps from iTunes when AASA is not configured', async () => {
+  it('adds iTunes result when bundle ID contains the domain base name and AASA is absent', async () => {
     mockedAxios.get = jest.fn()
       .mockResolvedValueOnce({ status: 404, data: {} })                  // apple association - not found
       .mockResolvedValueOnce({ status: 404, data: [] })                  // assetlinks - not found
       .mockResolvedValueOnce({ status: 200, data: '' })                  // homepage html
-      .mockResolvedValueOnce({ data: itunesResponse });                  // itunes returns a result
+      .mockResolvedValueOnce({ data: itunesResponse });                  // itunes: bundleId contains 'example'
 
     const result = await scanMobile('example.com');
 
-    // iTunes-only results must not be added - they are fuzzy name matches, not domain associations
-    expect(result.apps).toHaveLength(0);
+    expect(result.apps.some((a) => a.appId === 'TEAMID.com.example.app' && a.name === 'Example App')).toBe(true);
     expect(result.hasAppleAssociation).toBe(false);
+  });
+
+  it('skips iTunes results whose bundle ID does not contain the domain base name', async () => {
+    const unrelatedItunes = {
+      resultCount: 1,
+      results: [{ trackId: 99, trackName: 'Unrelated App', trackViewUrl: 'https://apps.apple.com/app/id99', bundleId: 'com.univision.prendetv' }],
+    };
+    mockedAxios.get = jest.fn()
+      .mockResolvedValueOnce({ status: 404, data: {} })
+      .mockResolvedValueOnce({ status: 404, data: [] })
+      .mockResolvedValueOnce({ status: 200, data: '' })
+      .mockResolvedValueOnce({ data: unrelatedItunes });
+
+    const result = await scanMobile('example.com');
+
+    expect(result.apps).toHaveLength(0);
   });
 
   it('extracts store links from homepage HTML', async () => {

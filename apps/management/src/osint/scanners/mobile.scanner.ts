@@ -70,13 +70,25 @@ export async function scanMobile(domain: string): Promise<MobileResult> {
     }
   }
 
-  // iTunes Search API — enrich iOS apps already found in AASA with name and store URL
+  // iTunes Search API — enrich AASA apps with name/URL, or add new iOS apps if bundle ID
+  // contains the domain's base name (filters out fuzzy unrelated matches)
+  const domainBase = domain.replace(/\..+$/, '').toLowerCase();
   if (itunesRes.status === 'fulfilled') {
     for (const result of itunesRes.value.data.results ?? []) {
       const existingIos = apps.find((a) => a.appId === result.bundleId && a.platform === 'ios');
       if (existingIos) {
         existingIos.name = result.trackName;
         existingIos.storeUrl = result.trackViewUrl;
+      } else if (
+        result.bundleId.toLowerCase().includes(domainBase) &&
+        !apps.some((a) => a.appId === result.bundleId)
+      ) {
+        apps.push({
+          platform: 'ios',
+          appId: result.bundleId,
+          name: result.trackName,
+          storeUrl: result.trackViewUrl,
+        });
       }
     }
   }
